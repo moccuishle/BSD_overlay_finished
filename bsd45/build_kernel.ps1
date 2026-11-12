@@ -216,6 +216,7 @@ $c_sources = [ordered]@{
     "mon.o"      = @("c",   "$ws\kernel\mon.c")
     "atapi.o"    = @("c",   "$ws\kernel\atapi.c")
     "isofs.o"    = @("c",   "$ws\kernel\isofs.c")
+"vfs.o"      = @("c",   "$ws\kernel\vfs.c")
 }
 
 $objs = @()

@@ -28,6 +28,7 @@
 
 #include "atapi.h"
 #include "isofs.h"
+#include "vfs.h"
 
 /* GCC builtins: the mingw <stdarg.h> is only an include_next stub. */
 typedef __builtin_va_list	va_list;
@@ -281,10 +282,11 @@ main(vm_offset_t firstaddr)
 			if (atapi_capacity(&cap) == 0)
 				printf("atapi: capacity %d sectors\n", cap + 1);
 		}
-		if (iso_mount() == 0)
+		if (iso_mount() == 0) {
+			vfs_init();
 			printf("root: ISO9660 on ATAPI CD, root dir lba %d, %d bytes\n",
 			    iso_root(), iso_root_size());
-		else
+		} else
 			printf("root: ATAPI device found but no ISO9660 volume\n");
 	} else
 		printf("root: no ATAPI CD-ROM, using embedded ramfs\n");

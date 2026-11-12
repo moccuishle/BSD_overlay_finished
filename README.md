@@ -135,30 +135,28 @@ VMware 提示：启动后先**点一下 VM 窗口**再敲键盘（VMware 需要�
 这是一颗 **可启动的 4.4BSD-Lite2 i386 内核 + 最小用户态**：保护模式、分页、
 GDT/IDT/TSS、物理内存探测、Mach pmap 引导、可交互 monitor 均已跑通。
 
-S1–S8 之后，ISO 的内核会自己用 ATAPI(PIO) 读光盘、挂上 **ISO9660 root**，
+S1–S9 之后，ISO 的内核会自己用 ATAPI(PIO) 读光盘、挂上 **ISO9660 root**，
 `/sbin/init` 与**真正的 4.4BSD `/bin/sh`** 都是光盘上的文件；内核有进程表、
-`fork/vfork/wait4/exit`、**控制台 tty**、**目录遍历/通配符**、**pipe**，
-以及一块可写的 **内存 tmpfs**（`/tmp`），所以重定向也能用了：
+`fork/vfork/wait4/exit`、**控制台 tty**、**目录/通配符**、**pipe**，以及
+一块可写的 **tmpfs**（`/tmp`）。S9 把 ramfs/ISO/tmpfs 的三套特判收进一个
+**vnode/VFS 层**（`vnodeops` + 挂载点），syscall 与 `execve` 都只认 vnode：
 
 ```
 bsd45> shell
-# echo hello-tmpfs > /tmp/a
+# ls /bin                     <- ISO9660，经 vnode readdir
+# cat /readme.txt             <- ISO9660 文件，经 vnode read
+# echo vfs-ok > /tmp/a        <- tmpfs，经 vnode create/write
 # cat /tmp/a
-hello-tmpfs
-# mkdir /tmp/d
-# ls /tmp
-a
-d
-# echo /bin/*
-/bin/cat.elf /bin/echo.elf /bin/ls.elf /bin/mkdir.elf /bin/sh.elf
-# echo hello-pipe | cat
-hello-pipe
+vfs-ok
+# echo hi-vfs | cat           <- pipe
+hi-vfs
 ```
 
-它**还不是**完整系统：没有真 vnode/VFS（root 是只读 ISO9660 + ramfs 兜底，
-`/tmp` 是独立的 tmpfs）、物理页只分配不回收、没有作业控制。
+它**还不是**完整系统：没有页/vnode 回收、没有作业控制与信号投递、
+没有 `rm`/`cp` 等工具，VFS 也还只有两个后端、没有真正的 mount 表与权限。
 “ELF 内核 + El Torito 引导”“光盘 root 跑 BSD sh”“fork/exec 外部命令”
-“控制台 tty”“目录与管道”“可写 tmpfs 与重定向”都已达成。
+“控制台 tty”“目录/管道”“可写 tmpfs + 重定向”“vnode/VFS 统一层”
+都已达成。
 
 
 ## 许可
@@ -217,13 +215,14 @@ GCC 版本不必是 16.2.0：include 路径由 `gcc -print-file-name=include` �
 交叉工具链（或 i686-elf-gcc）并改写构建命令；COFF→PE→objcopy 的思路不变，
 `overlay/` 里的源码修补与引导器可以直接复用。
 
-## 用户态进度（S8）
+## 用户态进度（S9）
 
 - 已完成：ring3、`execve`、`int 0x80`、4.4BSD libc 子集、真正的 `/bin/sh`、
-  **ATAPI + ISO9660 root**、**fork/vfork/wait4**、外部命令、**tty/termios**、
-  **目录 + 通配符 + pipe**、**内存 tmpfs + 重定向**；
-- 光盘上的工具：`/bin/sh`、`/bin/echo`、`/bin/ls`、`/bin/cat`、
-  `/bin/mkdir`、`/sbin/init`、`/test`（tty/进程/管道/tmpfs 自检）；
-- 可写目录：`/tmp`（文件 4 KB、32 个槽，支持 `mkdir`/`unlink`）；
-- 仍然没有：真 vnode/VFS、页回收、作业控制、`rm`/`cp` 等工具。
+  **ATAPI + ISO9660 root**、**fork/vfork/wait4**、**tty/termios**、
+  **目录 + 通配符 + pipe**、**tmpfs + 重定向**、**vnode/VFS 统一层**；
+- 光盘工具：`/bin/sh`、`/bin/echo`、`/bin/ls`、`/bin/cat`、`/bin/mkdir`、
+  `/sbin/init`、`/test`；
+- 可写目录：`/tmp`（tmpfs，一页一个文件，支持 create/truncate/append/
+  unlink/mkdir/rmdir）；
+- 仍然没有：页/vnode 回收、作业控制、`rm`/`cp` 等工具、真正的 mount 表。
   路线见 [`bsd45/docs/USERLAND-PLAN.md`](bsd45/docs/USERLAND-PLAN.md)。

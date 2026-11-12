@@ -9,6 +9,7 @@
 #include <termios.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 static char *vav[3] = { "echo", "vfork-exec-ok", 0 };
 static char *venv[2] = { "PATH=/bin", 0 };
@@ -35,6 +36,7 @@ main(int argc, char **argv)
 			printf("tty: iflag=%x oflag=%x cflag=%x lflag=%x\n",
 			    t.c_iflag, t.c_oflag, t.c_cflag, t.c_lflag);
 	}
+
 
 	{
 		int fd, n2;

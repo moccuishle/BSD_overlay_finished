@@ -31,8 +31,8 @@ $log = & $script -Iso $Iso -Keys @("cd", "usermode") -WaitFor "user exit" -Timeo
 $log = $log -join "`n"
 
 Check "mount" $log @("ISO9660 on ATAPI CD", "ISO9660 root: lba")
-Check "exec from CD" $log @("from ISO9660", "hello", "[user exit 3]")
-Check "no fallback" $log @("execve /bin/sh: from ISO9660")
+Check "exec from CD" $log @("via vnode", "hello", "[user exit 3]")
+Check "no fallback" $log @("execve /bin/sh: via vnode")
 if ($log -match 'from ramfs') {
     Write-Host "  FAIL the shell came from the embedded ramfs, not the CD" -ForegroundColor Red
     $fails++

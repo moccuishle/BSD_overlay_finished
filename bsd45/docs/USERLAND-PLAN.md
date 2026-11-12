@@ -139,6 +139,18 @@ execve + libc + /bin/sh**，最终 ISO 里是可执行的 i386 ELF 用户程序�
 
 尚未做：真 vnode/VFS、页回收、作业控制、更多工具。
 
+### S9 vnode/VFS 统一层 ✅
+
+- `kernel/vfs.c`：`struct vnode` + `vnodeops`（lookup/getattr/read/write/
+  readdir/create/remove/mkdir/rmdir/truncate），静态 vnode 池；
+- `iso_vnodeops`（lba/size + 按扇区读）与 `tmpfs_vnodeops`（一页一文件），
+  `/tmp` 作为挂载点由 `vfs_namei()` 切换；
+- open/stat/fstat/access/unlink/mkdir/rmdir/getdirentries/lseek 与
+  `execve` 全部走 vnode；fd 持有 vnode 引用并维护引用计数；
+- 验收：`tools/test_s9.ps1`（ISO 目录/文件 + tmpfs + pipe 混合）。
+
+尚未做：页/缓存回收、作业控制、更多工具、mount 表与权限。
+
 
 ## 关键接口草案
 

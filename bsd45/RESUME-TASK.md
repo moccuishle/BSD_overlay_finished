@@ -1,8 +1,8 @@
 # BSD45-ELF-x86 任务恢复文本
 
 更新时间：2026-11-13（Asia/Shanghai）
-状态：**S8 完成**（内存 tmpfs：文件重定向、/tmp、mkdir）。
-下一步：真 vnode/VFS、页回收、作业控制、更多工具。
+状态：**S9 完成**（vnode/VFS 统一层，ISO9660 与 tmpfs 共用一套接口）。
+下一步：页回收、作业控制、更多工具、更完整的 VFS。
 仓库：https://github.com/moccuishle/BSD45_rootfs_shell_finished
 
 本机环境（网吧 Windows，无管理员、防火墙不可关）：
@@ -45,6 +45,7 @@ ISO，最终 ISO 启动后进入用户态运行 BSD 的 `/bin/sh`。
 | S6 | 控制台 tty：termios ioctl、行规程、`isatty` 为真、sh 交互提示符 | ✅ 本次完成 |
 | S7 | 目录遍历（`getdirentries`/`opendir`/`readdir`、`ls`、通配符）+ pipe 管道 | ✅ 本次完成 |
 | S8 | 内存 tmpfs：`/tmp` 可写、`>`/`>>` 重定向、`mkdir`/`ls /tmp` | ✅ 本次完成 |
+| S9 | vnode/VFS：`vnodeops` + ISO9660/tmpfs 后端，syscall/exec 全部走 vnode | ✅ 本次完成 |
 
 ### S3 验收（`powershell -File tools\test_s3.ps1`）
 
@@ -263,6 +264,38 @@ d
   `fcntl(1, F_DUPFD, 10)`（sh 的 `savefd`）返回 EBADF，重定向静默失效；
 - 新增 `/bin/mkdir`；`sh` 的 `>`/`>>` 现在走 open + fcntl + dup2。
 
+
+### S9 验收（`powershell -File tools\test_s9.ps1`）
+
+```
+bsd45> shell
+# ls /                 <- ISO9660 目录，经 vnode readdir
+# cat /readme.txt      <- ISO9660 文件，经 vnode read
+# echo vfs-ok > /tmp/a <- tmpfs，经 vnode create/write
+# cat /tmp/a
+vfs-ok
+# mkdir /tmp/d
+# ls /tmp
+a
+d
+# echo hi-vfs | cat    <- 管道仍然工作
+hi-vfs
+```
+
+### S9 实现要点
+
+- 新增 `kernel/vfs.c` + `vfs.h`：`struct vnode` + `struct vnodeops`
+  （lookup/getattr/read/write/readdir/create/remove/mkdir/rmdir/truncate）；
+- 两个后端：`iso_vnodeops`（(lba,size) 存在 vnode 里，按扇区读）和
+  `tmpfs_vnodeops`（一页一个文件）；`/tmp` 是挂在 ISO 根上的挂载点，
+  `vfs_namei()` 里切换；
+- 所有路径类系统调用（open/stat/fstat/access/unlink/mkdir/rmdir/
+  getdirentries/lseek）以及 `execve`/`init` 装载都改成走 vnode，
+  syscall 层不再判断“这是 ISO 还是 tmpfs”；
+- fd 表里放 `struct vnode *vp`，`close`/`dup`/`dup2`/`fcntl(F_DUPFD)`/
+  `fork` 都要维护 vnode 引用计数（96 个 vnode 的静态池）；
+- 旧的 ramfs 直查被移除，`/sbin/init`、`/bin/sh` 从光盘经 VFS 装载。
+
 ## 3. S3 做了什么
 
 ### 3.1 内核（`kernel/usermode.c`）
@@ -456,12 +489,24 @@ absent 是正常的。
     pid 1，绕过了 `proc_alloc`，第一版 S8 因此让 init/sh 的 printf 和
     read(0) 全失败。
 
-## 7. 下一步（S8 之后）
+40. **fd 关掉时要 `vn_put()`**：VFS 化之后 fd 持有 vnode 引用，最初
+    `close()` 只清 `used`，vnode 池（96 个）很快耗尽，`ls /tmp` 直接
+    打不开目录；`dup/dup2/fcntl/fork` 复制 fd 时也要 `vp->ref++`。
+41. **tmpfs 根 vnode 没有 node**：`node = -1`，`getattr` 直接索引
+    `tmpfs_nodes[-1]` 会把 `/tmp` 报成普通文件，`opendir` 因此失败
+    （症状：`ls /tmp` 打印路径本身）。每个 op 要先判根节点。
+42. **ISO 名字还是大写 + `.ELF`**：`/sbin/init` 在盘上是 `SBIN/INIT.ELF`，
+    VFS 的 lookup 要在精确匹配失败后对无点名字再试一次 `name + ".elf"`。
+43. **`execve` 也要走 vnode**：直接 `iso_lookup()+atapi_read()` 会让
+    VFS 变成“只给 syscall 用的装饰”；现在 exec/init 都通过
+    `vnodeops->read` 把镜像读进内核窗口。
 
-1. 真 vnode/VFS 与 vm_map，替换 ramfs/ISO/tmpfs 的三套特判；
-2. 页回收（fork/exec/管道/tmpfs 只分配不释放）；
-3. `/bin/rm`、`/bin/cp`、`/bin/mv` 等工具，作业控制；
-4. 从 4.4BSD 源码直接编译更多 `usr.bin` 程序；
-5. 简单的权限/属主模型。
+## 7. 下一步（S9 之后）
+
+1. 页回收与 vnode 缓存回收（现在 vnode 池/物理页只增不减）；
+2. 作业控制（`&`、`fg`/`bg`）与信号投递；
+3. 更多工具（`rm`、`cp`、`mv`、`grep`、`wc`）；
+4. 更完整的 VFS：mount 表、`chdir`/相对路径、权限检查；
+5. 从 4.4BSD 源码直接编译更多 `usr.bin` 程序。
 
 恢复方式：打开本文件，按第 5 节构建，从第 7 节继续。

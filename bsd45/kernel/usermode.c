@@ -31,6 +31,7 @@
 
 #include "atapi.h"
 #include "isofs.h"
+#include "vfs.h"
 
 #define	USER_LOAD	0x08048000
 #define	USER_STACK_TOP	0xBFC00000
@@ -120,6 +121,7 @@ struct fd {
 	int			pipeidx;	/* pipe table slot */
 	int			rw;		/* 1 = read end, 2 = write end */
 	int			node;		/* tmpfs node index */
+	struct vnode		*vp;		/* file/dir through the VFS */
 };
 
 /* saved user context, filled by syscall_entry/enter_user */
@@ -187,6 +189,13 @@ cd_map(unsigned size)
 	return ((unsigned char *)CD_IMAGE_VA);
 }
 static unsigned umask_val = 022;
+
+unsigned
+vfs_page_alloc(void)
+{
+
+	return (page_alloc());
+}
 
 static unsigned
 page_alloc(void)
@@ -436,6 +445,28 @@ fd_alloc(struct file *f)
 			cur->fds[i].dpos = 0;
 			cur->fds[i].pipeidx = -1;
 			cur->fds[i].rw = 0;
+			cur->fds[i].node = -1;
+			return (i);
+		}
+	}
+	return (-1);
+}
+
+static int
+fd_alloc_vnode(struct vnode *vp, int rw, unsigned off)
+{
+	int i;
+
+	for (i = 3; i < NFD; i++) {
+		if (!cur->fds[i].used) {
+			bzero(&cur->fds[i], sizeof(cur->fds[i]));
+			cur->fds[i].used = 1;
+			cur->fds[i].type = (vp->type == VDIR) ? FD_DIR :
+			    FD_FILE;
+			cur->fds[i].vp = vp;
+			cur->fds[i].rw = rw;
+			cur->fds[i].off = off;
+			cur->fds[i].pipeidx = -1;
 			cur->fds[i].node = -1;
 			return (i);
 		}
@@ -765,7 +796,19 @@ fd_close(int fd)
 			fp->pipeidx = -1;
 		}
 	}
+	if (fp->vp != 0) {
+		vn_put(fp->vp);
+		fp->vp = 0;
+	}
 	fp->used = 0;
+}
+
+static void
+fd_ref(struct fd *fp)
+{
+
+	if (fp->vp != 0)
+		fp->vp->ref++;
 }
 
 /* --------------------------------------------------------------- process */
@@ -912,6 +955,9 @@ do_fork(struct sysregs *r)
 	{
 		int i;
 
+		for (i = 0; i < NFD; i++)
+			if (p->fds[i].used && p->fds[i].vp != 0)
+				p->fds[i].vp->ref++;
 		for (i = 0; i < NFD; i++)
 			if (p->fds[i].used && p->fds[i].type == FD_PIPE &&
 			    p->fds[i].pipeidx >= 0) {
@@ -1106,24 +1152,26 @@ exec_image(const char *path, unsigned uargv, unsigned uenvp, struct sysregs *r)
 	 */
 	f = 0;
 	{
-		unsigned lba, fsize;
+		struct vnode *vp = 0;
 		unsigned char *buf;
+		int rv;
 
-		if (iso_mounted() &&
-		    iso_lookup(path, &lba, &fsize) == 0 &&
-		    (buf = cd_map(fsize)) != 0 &&
-		    atapi_read(lba, (fsize + 2047) / 2048, buf) == 0) {
-			img = buf;
-			len = fsize;
-			printf("execve %s: from ISO9660 (%d bytes, lba %d)\n",
-			    path, fsize, lba);
-		} else if ((f = fs_lookup(path)) != 0) {
-			img = f->f_data;
-			len = *f->f_len;
-			printf("execve %s: from ramfs (%d bytes)\n", path, len);
-		} else {
+		if (vfs_namei(path, &vp) < 0 || vp->type != VREG)
 			return (-ENOENT);
+		len = vp->size;
+		buf = cd_map(len);
+		if (buf == 0) {
+			vn_put(vp);
+			return (-ENOMEM);
 		}
+		rv = vp->ops->read(vp, 0, buf, len);
+		if (rv < 0 || (unsigned)rv != len) {
+			vn_put(vp);
+			return (-EIO);
+		}
+		printf("execve %s: via vnode (%d bytes)\n", path, len);
+		img = buf;
+		vn_put(vp);
 	}
 
 	if (uargv != 0) {
@@ -1284,6 +1332,20 @@ syscall_dispatch(struct sysregs *r)
 			r->eax = (unsigned)-EBADF;
 			break;
 		}
+		if (cur->fds[fd].used && cur->fds[fd].vp != 0) {
+			int n2;
+
+			if (cur->fds[fd].vp->ops->write == 0) {
+				r->eax = (unsigned)-EROFS;
+				break;
+			}
+			n2 = cur->fds[fd].vp->ops->write(cur->fds[fd].vp,
+			    cur->fds[fd].off, (const void *)buf, len);
+			if (n2 > 0)
+				cur->fds[fd].off += n2;
+			r->eax = (unsigned)n2;
+			break;
+		}
 		if (cur->fds[fd].used && cur->fds[fd].type == FD_TMPFILE) {
 			struct tmpfs_node *n = &tmpfs[cur->fds[fd].node];
 			unsigned off = cur->fds[fd].off, n2 = len;
@@ -1371,6 +1433,20 @@ syscall_dispatch(struct sysregs *r)
 			r->eax = (unsigned)-EISDIR;
 			break;
 		}
+		if (cur->fds[fd].vp != 0) {
+			int n2;
+
+			if (cur->fds[fd].vp->type == VDIR) {
+				r->eax = (unsigned)-EISDIR;
+				break;
+			}
+			n2 = cur->fds[fd].vp->ops->read(cur->fds[fd].vp,
+			    cur->fds[fd].off, (void *)buf, len);
+			if (n2 > 0)
+				cur->fds[fd].off += n2;
+			r->eax = (unsigned)n2;
+			break;
+		}
 		if (cur->fds[fd].type == FD_TMPFILE) {
 			struct tmpfs_node *n = &tmpfs[cur->fds[fd].node];
 			unsigned off = cur->fds[fd].off, n2 = 0;
@@ -1438,59 +1514,45 @@ syscall_dispatch(struct sysregs *r)
 	}
 	case 5: {			/* open(path, flags, mode) */
 		char path[128];
-		struct file *f;
-		unsigned lba, dsize;
-		int fd, isdir = 0;
+		struct vnode *vp = 0;
+		int fd, flags = (int)r->ecx, rw, rv;
+		unsigned mode = 0, size = 0;
 
 		if (user_str(r->ebx, path, sizeof(path)) < 0) {
 			r->eax = (unsigned)-EFAULT;
 			break;
 		}
-		f = fs_lookup(path);
-		if (f != 0) {
-			fd = fd_alloc(f);
-			r->eax = (fd < 0) ? (unsigned)-EMFILE : (unsigned)fd;
-			break;
-		}
-		if (tmpfs_is_tmp(path)) {
-			struct tmpfs_node *n = 0;
-			int isdir2, rw, flags = (int)r->ecx;
-
-			if (tmpfs_lookup(path, &n, &isdir2) < 0) {
-				if (!(flags & O_CREAT) ||
-				    strcmp(path, "/tmp") == 0 ||
-				    strcmp(path, "/tmp/") == 0) {
-					r->eax = (unsigned)-ENOENT;
-					break;
-				}
-				n = tmpfs_create(path + 5, 0);
-				if (n == 0) {
-					r->eax = (unsigned)-ENOSPC;
-					break;
-				}
-				isdir2 = 0;
-			}
-			if (isdir2) {
-				fd = fd_alloc_tmpdir();
-				r->eax = (fd < 0) ? (unsigned)-EMFILE :
-				    (unsigned)fd;
+		rv = vfs_namei(path, &vp);
+		if (rv < 0) {
+			if (!(flags & O_CREAT)) {
+				r->eax = (unsigned)-ENOENT;
 				break;
 			}
-			rw = ((flags & O_ACCMODE) == O_RDONLY) ? 1 : 2;
-			if (flags & O_TRUNC)
-				n->size = 0;
-			fd = fd_alloc_tmpfile(n, rw,
-			    (flags & O_APPEND) ? n->size : 0);
-			r->eax = (fd < 0) ? (unsigned)-EMFILE : (unsigned)fd;
+			rv = vfs_create(path, 0, &vp);
+			if (rv < 0) {
+				r->eax = (unsigned)rv;
+				break;
+			}
+		}
+		rw = ((flags & O_ACCMODE) == O_RDONLY) ? 1 : 2;
+		if (flags & O_TRUNC) {
+			if (vp->ops->truncate == 0) {
+				vn_put(vp);
+				r->eax = (unsigned)-EROFS;
+				break;
+			}
+			vp->ops->truncate(vp);
+		}
+		if (flags & O_APPEND) {
+			vp->ops->getattr(vp, &mode, &size);
+		}
+		fd = fd_alloc_vnode(vp, rw, (flags & O_APPEND) ? size : 0);
+		if (fd < 0) {
+			vn_put(vp);
+			r->eax = (unsigned)-EMFILE;
 			break;
 		}
-		if (iso_mounted() &&
-		    iso_stat(path, &lba, &dsize, &isdir) == 0 && isdir) {
-			fd = fd_alloc_dir(lba, dsize);
-			r->eax = (fd < 0) ? (unsigned)-EMFILE : (unsigned)fd;
-			break;
-		}
-		r->eax = (unsigned)-ENOENT;
+		r->eax = (unsigned)fd;
 		break;
 	}
 	case 6:				/* close(fd) */
@@ -1543,26 +1605,15 @@ syscall_dispatch(struct sysregs *r)
 		break;
 	case 33: {			/* access(path, mode) */
 		char path[128];
-		unsigned lba, size;
-		int isdir;
+		struct vnode *vp = 0;
 
 		if (user_str(r->ebx, path, sizeof(path)) < 0) {
 			r->eax = (unsigned)-EFAULT;
 			break;
 		}
-		if (tmpfs_is_tmp(path)) {
-			struct tmpfs_node *n2 = 0;
-			int isd2;
-
-			r->eax = (tmpfs_lookup(path, &n2, &isd2) == 0) ? 0 :
-			    (unsigned)-ENOENT;
-			break;
-		}
-		if (fs_lookup(path) != 0 || isofile_exists(path) ||
-		    (iso_mounted() && iso_stat(path, &lba, &size, &isdir) == 0))
-			r->eax = 0;
-		else
-			r->eax = (unsigned)-ENOENT;
+		r->eax = (vfs_namei(path, &vp) == 0) ? 0 : (unsigned)-ENOENT;
+		if (vp)
+			vn_put(vp);
 		break;
 	}
 	case 46: case 48: case 52: case 53:	/* signals: accept and ignore */
@@ -1632,41 +1683,21 @@ syscall_dispatch(struct sysregs *r)
 	}
 	case 189: {			/* stat(path, sb) */
 		char path[128];
-		struct file *f;
-		unsigned lba, size;
-		int isdir;
+		struct vnode *vp = 0;
+		unsigned mode = 0, size = 0;
 
 		if (user_str(r->ebx, path, sizeof(path)) < 0 ||
 		    !user_ok(r->ecx, STAT_SIZE)) {
 			r->eax = (unsigned)-EFAULT;
 			break;
 		}
-		if (tmpfs_is_tmp(path)) {
-			struct tmpfs_node *n = 0;
-			int isd;
-
-			if (tmpfs_lookup(path, &n, &isd) < 0) {
-				r->eax = (unsigned)-ENOENT;
-				break;
-			}
-			fill_stat(isd ? 0040755 : 0100644,
-			    n ? n->size : 0, (unsigned *)r->ecx);
-			r->eax = 0;
-			break;
-		}
-		if (iso_mounted() &&
-		    iso_stat(path, &lba, &size, &isdir) == 0) {
-			fill_stat(isdir ? 0040755 : 0100755, size,
-			    (unsigned *)r->ecx);
-			r->eax = 0;
-			break;
-		}
-		f = fs_lookup(path);
-		if (f == 0) {
+		if (vfs_namei(path, &vp) < 0) {
 			r->eax = (unsigned)-ENOENT;
 			break;
 		}
-		fill_stat(0100755, *f->f_len, (unsigned *)r->ecx);
+		vp->ops->getattr(vp, &mode, &size);
+		fill_stat(mode, size, (unsigned *)r->ecx);
+		vn_put(vp);
 		r->eax = 0;
 		break;
 	}
@@ -1682,6 +1713,15 @@ syscall_dispatch(struct sysregs *r)
 		}
 		if (r->ebx >= NFD || !cur->fds[r->ebx].used) {
 			r->eax = (unsigned)-EBADF;
+			break;
+		}
+		if (cur->fds[r->ebx].vp != 0) {
+			unsigned mode = 0, size = 0;
+
+			cur->fds[r->ebx].vp->ops->getattr(
+			    cur->fds[r->ebx].vp, &mode, &size);
+			fill_stat(mode, size, (unsigned *)r->ecx);
+			r->eax = 0;
 			break;
 		}
 		if (cur->fds[r->ebx].type == FD_TMPFILE) {
@@ -1719,6 +1759,36 @@ syscall_dispatch(struct sysregs *r)
 			break;
 		}
 		fp = &cur->fds[fd];
+		if (fp->vp != 0) {
+			int rv2, namlen2, reclen2, isd2 = 0;
+
+			rv2 = fp->vp->ops->readdir(fp->vp, &fp->off, name,
+			    &isd2);
+			if (rv2 < 0) {
+				r->eax = (unsigned)-EIO;
+				break;
+			}
+			if (basep != 0 && user_ok(basep, 4))
+				*(unsigned *)basep = 0;
+			if (rv2 > 0) {
+				r->eax = 0;
+				break;
+			}
+			namlen2 = strlen(name);
+			reclen2 = (8 + namlen2 + 1 + 3) & ~3;
+			if ((unsigned)reclen2 > nb) {
+				r->eax = (unsigned)-EINVAL;
+				break;
+			}
+			bzero((char *)buf, reclen2);
+			*(unsigned *)(buf + 0) = fp->off;
+			*(unsigned short *)(buf + 4) = reclen2;
+			((char *)buf)[6] = isd2 ? 4 : 8;
+			((char *)buf)[7] = namlen2;
+			bcopy(name, (char *)buf + 8, namlen2 + 1);
+			r->eax = reclen2;
+			break;
+		}
 		if (fp->type == FD_TMPDIR) {
 			int i;
 
@@ -1782,6 +1852,20 @@ syscall_dispatch(struct sysregs *r)
 
 		if (fd >= NFD || !cur->fds[fd].used) {
 			r->eax = (unsigned)-EBADF;
+			break;
+		}
+		if (cur->fds[fd].vp != 0) {
+			unsigned mode = 0, size = 0;
+
+			cur->fds[fd].vp->ops->getattr(cur->fds[fd].vp,
+			    &mode, &size);
+			if (wh == 0)
+				cur->fds[fd].off = off;
+			else if (wh == 1)
+				cur->fds[fd].off += off;
+			else
+				cur->fds[fd].off = size;
+			r->eax = cur->fds[fd].off;
 			break;
 		}
 		if (cur->fds[fd].type == FD_TMPFILE) {
@@ -1849,6 +1933,7 @@ syscall_dispatch(struct sysregs *r)
 				break;
 			}
 			cur->fds[newfd] = cur->fds[fd];
+			fd_ref(&cur->fds[newfd]);
 			if (cur->fds[newfd].type == FD_PIPE &&
 			    cur->fds[newfd].pipeidx >= 0) {
 				if (cur->fds[newfd].rw == 1)
@@ -1881,6 +1966,7 @@ syscall_dispatch(struct sysregs *r)
 			break;
 		}
 		cur->fds[to] = cur->fds[from];
+		fd_ref(&cur->fds[to]);
 		if (cur->fds[to].type == FD_PIPE && cur->fds[to].pipeidx >= 0) {
 			if (cur->fds[to].rw == 1)
 				pipes[cur->fds[to].pipeidx].readers++;
@@ -1909,6 +1995,7 @@ syscall_dispatch(struct sysregs *r)
 		for (i = 3; i < NFD && nfd < 2; i++) {
 			if (!cur->fds[i].used) {
 				fds[nfd++] = i;
+				bzero(&cur->fds[i], sizeof(cur->fds[i]));
 				cur->fds[i].used = 1;
 				cur->fds[i].type = FD_PIPE;
 				cur->fds[i].pipeidx = pp - pipes;
@@ -1945,6 +2032,7 @@ syscall_dispatch(struct sysregs *r)
 		}
 		fd_close(to);
 		cur->fds[to] = cur->fds[from];
+		fd_ref(&cur->fds[to]);
 		if (cur->fds[to].type == FD_PIPE && cur->fds[to].pipeidx >= 0) {
 			if (cur->fds[to].rw == 1)
 				pipes[cur->fds[to].pipeidx].readers++;
@@ -1956,50 +2044,55 @@ syscall_dispatch(struct sysregs *r)
 	}
 	case 10: {			/* unlink(path) */
 		char path[128];
-		struct tmpfs_node *n = 0;
-		int isd;
+		struct vnode *dv = 0;
+		char name[48];
+		int rv;
 
 		if (user_str(r->ebx, path, sizeof(path)) < 0) {
 			r->eax = (unsigned)-EFAULT;
 			break;
 		}
-		if (!tmpfs_is_tmp(path) ||
-		    tmpfs_lookup(path, &n, &isd) < 0 || n == 0) {
+		rv = vfs_lookup_parent(path, &dv, name);
+		if (rv < 0 || dv->ops->remove == 0) {
 			r->eax = (unsigned)-ENOENT;
 			break;
 		}
-		tmpfs_remove(n);
-		r->eax = 0;
+		r->eax = (unsigned)dv->ops->remove(dv, name);
+		vn_put(dv);
 		break;
 	}
-	case 136: case 137: {		/* mkdir / rmdir */
+	case 136: {			/* mkdir(path, mode) */
 		char path[128];
-		struct tmpfs_node *n = 0;
-		int isd, wantdir = (n == 0);
+		struct vnode *vp = 0;
+		int rv;
 
 		if (user_str(r->ebx, path, sizeof(path)) < 0) {
 			r->eax = (unsigned)-EFAULT;
 			break;
 		}
-		if (!tmpfs_is_tmp(path) || strcmp(path, "/tmp") == 0 ||
-		    strcmp(path, "/tmp/") == 0) {
+		rv = vfs_create(path, 1, &vp);
+		if (vp)
+			vn_put(vp);
+		r->eax = (unsigned)rv;
+		break;
+	}
+	case 137: {			/* rmdir(path) */
+		char path[128];
+		char name[48];
+		struct vnode *dv = 0;
+		int rv;
+
+		if (user_str(r->ebx, path, sizeof(path)) < 0) {
+			r->eax = (unsigned)-EFAULT;
+			break;
+		}
+		rv = vfs_lookup_parent(path, &dv, name);
+		if (rv < 0 || dv->ops->rmdir == 0) {
 			r->eax = (unsigned)-ENOENT;
 			break;
 		}
-		if (n == 0 && 0)
-			break;
-		if (tmpfs_lookup(path, &n, &isd) == 0) {
-			if (n != 0 && !n->isdir) {
-				r->eax = (unsigned)-EEXIST;
-				break;
-			}
-			r->eax = (unsigned)-EEXIST;
-			break;
-		}
-		if (r->eax == 0)
-			break;
-		n = tmpfs_create(path + 5, 1);
-		r->eax = n ? 0 : (unsigned)-ENOSPC;
+		r->eax = (unsigned)dv->ops->rmdir(dv, name);
+		vn_put(dv);
 		break;
 	}
 	case 12:			/* chdir */
@@ -2034,24 +2127,30 @@ start_prog(const char *path, const char *script)
 
 	img = 0;
 	len = 0;
-	if ((f = fs_lookup(path)) != 0) {
-		img = f->f_data;
-		len = *f->f_len;
-	} else {
-		unsigned lba, fsize;
+	{
+		struct vnode *vp = 0;
 		unsigned char *buf;
+		int rv;
 
-		if (iso_mounted() && iso_lookup(path, &lba, &fsize) == 0 &&
-		    (buf = cd_map(fsize)) != 0 &&
-		    atapi_read(lba, (fsize + 2047) / 2048, buf) == 0) {
-			img = buf;
-			len = fsize;
-			printf("exec %s: from ISO9660 (%d bytes)\n",
-			    path, fsize);
-		} else {
+		if (vfs_namei(path, &vp) < 0 || vp->type != VREG) {
 			printf("no image for %s\n", path);
 			return;
 		}
+		len = vp->size;
+		buf = cd_map(len);
+		if (buf == 0) {
+			printf("no window for %s\n", path);
+			vn_put(vp);
+			return;
+		}
+		rv = vp->ops->read(vp, 0, buf, len);
+		vn_put(vp);
+		if (rv < 0 || (unsigned)rv != len) {
+			printf("read failed for %s\n", path);
+			return;
+		}
+		printf("exec %s: via vnode (%d bytes)\n", path, len);
+		img = buf;
 	}
 	argv[0] = (char *)path;
 	argc = 1;
