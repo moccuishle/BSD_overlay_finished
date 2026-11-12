@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 if (!$ws) { $ws = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path) }
 
 $srcroot = Join-Path $ws "src\BSD45"
-$marker  = Join-Path $srcroot "usr\src\sys\i386\i386\locore.s"
+$marker  = Join-Path $srcroot "usr\src\lib\libc\gen\opendir.c"
 if (Test-Path $marker) { return $srcroot }
 
 $tarball = Join-Path $ws "..\4.4BSD-Lite2.tar.gz"
@@ -32,7 +32,7 @@ if (Test-Path $srcroot) {
     $empty = Join-Path $env:TEMP "dsh-empty-backup"
     New-Item -ItemType Directory -Force -Path $empty | Out-Null
     & robocopy $empty $srcroot /MIR /NFL /NDL /NJH /NJS /R:0 /W:0 | Out-Null
-    & cmd /c "rmdir /s /q `"$srcroot`"" 2>$null | Out-Null
+    & $env:ComSpec /c "rmdir /s /q `"$srcroot`"" 2>$null | Out-Null
 }
 
 $seven = Join-Path ${env:ProgramFiles(x86)} "VMware\VMware Workstation\7za.exe"
@@ -54,6 +54,9 @@ $extracted = Join-Path $srcdir "4.4BSD-Lite2"
 if ((Test-Path $extracted) -and !(Test-Path $srcroot)) {
     Rename-Item $extracted $srcroot -Force
 }
-& cmd /c "attrib -R `"$srcroot\*.*`" /S /D" 2>$null | Out-Null
+& $env:ComSpec /c "attrib -R `"$srcroot\*.*`" /S /D" 2>$null | Out-Null
+if (!(Test-Path (Join-Path $ws "kernel\arch\i386\i386\locore.s"))) {
+    & (Join-Path $ws "tools\reorganize.ps1")
+}
 if (!(Test-Path $marker)) { throw "extraction failed: $marker missing" }
 return $srcroot

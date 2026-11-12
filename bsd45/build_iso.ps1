@@ -62,25 +62,38 @@ if ($off -lt 0) { throw "manifest magic not found" }
 Copy-Item $Kernel "$isodir\BSD45.ELF" -Force
 
 # S4: the userland programs live on the ISO9660 volume, not in the kernel.
-New-Item -ItemType Directory -Force -Path "$isodir\BIN", "$isodir\SBIN" | Out-Null
+New-Item -ItemType Directory -Force -Path "$isodir\bin", "$isodir\sbin" | Out-Null
 $sh = Join-Path $ws "out\userland\sh.elf"
 $init = Join-Path $ws "out\userland\init.elf"
 $hello = Join-Path $ws "out\userland\hello.elf"
 $test = Join-Path $ws "out\userland\test.elf"
-if (Test-Path $sh)    { Copy-Item $sh    "$isodir\BIN\SH.ELF"   -Force }
-if (Test-Path $init)  { Copy-Item $init  "$isodir\SBIN\INIT.ELF" -Force }
+if (Test-Path $sh)    { Copy-Item $sh    "$isodir\bin\SH.ELF"   -Force }
+if (Test-Path $init)  { Copy-Item $init  "$isodir\sbin\INIT.ELF" -Force }
 if (Test-Path $hello) { Copy-Item $hello "$isodir\HELLO.ELF"    -Force }
 if (Test-Path $test)  { Copy-Item $test  "$isodir\TEST.ELF"     -Force }
 $ls = Join-Path $ws "out\userland\ls.elf"
-if (Test-Path $ls)    { Copy-Item $ls    "$isodir\BIN\LS.ELF"     -Force }
+if (Test-Path $ls)    { Copy-Item $ls    "$isodir\bin\LS.ELF"     -Force }
 $mkdir = Join-Path $ws "out\userland\mkdir.elf"
-if (Test-Path $mkdir) { Copy-Item $mkdir "$isodir\BIN\MKDIR.ELF" -Force }
+if (Test-Path $mkdir) { Copy-Item $mkdir "$isodir\bin\MKDIR.ELF" -Force }
 $cat = Join-Path $ws "out\userland\cat.elf"
-if (Test-Path $cat)   { Copy-Item $cat   "$isodir\BIN\CAT.ELF"    -Force }
+if (Test-Path $cat)   { Copy-Item $cat   "$isodir\bin\CAT.ELF"    -Force }
 $echo = Join-Path $ws "out\userland\echo.elf"
-if (Test-Path $echo)  { Copy-Item $echo  "$isodir\BIN\ECHO.ELF"  -Force }
+if (Test-Path $echo)  { Copy-Item $echo  "$isodir\bin\ECHO.ELF"  -Force }
 Copy-Item "$bld\boot.img" "$isodir\boot.img" -Force
-Copy-Item "$ws\README-ISO.txt" "$isodir\README.TXT" -Force -ErrorAction SilentlyContinue
+# rootfs_overlay/ is copied on top of the ISO root: /etc/profile,
+# /README.TXT and the empty bin/sbin/tmp skeleton.
+$ovl = Join-Path $ws "rootfs_overlay"
+if (Test-Path $ovl) {
+    Get-ChildItem $ovl -Force | ForEach-Object {
+        if ($_.PSIsContainer) {
+            Copy-Item $_.FullName "$isodir\$($_.Name)" -Recurse -Force
+        } else {
+            Copy-Item $_.FullName "$isodir\$($_.Name)" -Force
+        }
+    }
+}
+# .keep placeholders are only there to keep empty dirs in git
+Get-ChildItem $isodir -Recurse -Filter ".keep" -Force -ErrorAction SilentlyContinue | Remove-Item -Force
 
 if (Test-Path $OutIso) { Remove-Item $OutIso -Force }
 $mkArgs = @()

@@ -1,0 +1,4 @@
+# /etc/profile - BSD45 root filesystem overlay
+PATH=/bin:/sbin
+export PATH
+PS1='# '

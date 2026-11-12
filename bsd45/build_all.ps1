@@ -14,6 +14,10 @@ if (-not $NoSh) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ws "build_sh.ps1") |
         Select-Object -Last 3
     if (!(Test-Path (Join-Path $ws "out\userland\sh.elf"))) { throw "sh build failed" }
+
+# /test: the process/tty/tmpfs/proc self test that the monitor runs.
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ws "build_sh.ps1") -Target test
+if ($LASTEXITCODE -ne 0) { throw "test build failed" }
 }
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ws "build_kernel.ps1")

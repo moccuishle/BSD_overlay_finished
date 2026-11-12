@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = "Continue"
 $ws   = Split-Path -Parent $MyInvocation.MyCommand.Path
-$src  = Join-Path $ws "src\BSD45\usr\src\sys"
+$src  = Join-Path $ws "kernel"
 $bld  = Join-Path $ws "build"
 $obj  = Join-Path $bld "obj"
 $inc  = Join-Path $bld "inc"
@@ -28,10 +28,6 @@ New-Item -ItemType Directory -Force -Path $bld, $obj, $gen | Out-Null
 # overlay of the files that were adjusted for modern GCC / PE linking.
 $null = & (Join-Path $ws "tools\ensure-src.ps1") -ws $ws
 
-$overlay = Join-Path $ws "overlay"
-if (Test-Path $overlay) {
-    Copy-Item "$overlay\*" $src -Recurse -Force
-}
 
 # ---------------------------------------------------------------- headers
 function Copy-Headers([string]$from, [string]$to) {
@@ -45,15 +41,15 @@ function Copy-Headers([string]$from, [string]$to) {
     }
 }
 New-Item -ItemType Directory -Force -Path "$inc\sys", "$inc\vm", "$inc\machine", "$inc\i386" | Out-Null
-Copy-Headers "$src\sys" "$inc\sys"
+Copy-Headers "$src\include\sys" "$inc\sys"
 Copy-Headers "$src\vm" "$inc\vm"
-Copy-Headers "$src\i386\include" "$inc\machine"
-Copy-Headers "$src\i386\include" "$inc\i386"
-Copy-Item "$src\hp300\include\ansi.h"  "$inc\machine\ansi.h"  -Force
-Copy-Item "$src\hp300\include\limits.h" "$inc\machine\limits.h" -Force
-Copy-Item "$src\hp300\include\float.h"  "$inc\machine\float.h"  -Force
+Copy-Headers "$src\include\machine" "$inc\machine"
+Copy-Headers "$src\include\machine" "$inc\i386"
+Copy-Item "$src\include\machine\ansi.h"  "$inc\machine\ansi.h"  -Force
+Copy-Item "$src\include\machine\limits.h" "$inc\machine\limits.h" -Force
+Copy-Item "$src\include\machine\float.h"  "$inc\machine\float.h"  -Force
 New-Item -ItemType Directory -Force -Path "$inc\libkern" | Out-Null
-Copy-Item "$src\libkern\libkern.h" "$inc\libkern\libkern.h" -Force
+Copy-Item "$src\other\libkern\libkern.h" "$inc\libkern\libkern.h" -Force
 if (!(Select-String -Path "$inc\machine\types.h" -Pattern 'typedef int register_t;' -Quiet)) {
     Add-Content "$inc\machine\types.h" "`ntypedef int register_t;`ntypedef unsigned int u_register_t;" -Encoding ascii
 }
@@ -103,7 +99,7 @@ void *		memset(void *, int, unsigned int);
 # struct offsets / constants that locore.s expects.
 $ga = "$bld\genassym.exe"
 & $GCC -B "C:/msys64/mingw32/bin/" -m32 -O1 -std=gnu89 -fno-strict-aliasing `
-    -mno-ms-bitfields -I $inc -DKERNEL -o $ga "$src\i386\i386\genassym.c" 2>$null
+    -mno-ms-bitfields -I $inc -DKERNEL -o $ga "$src\arch\i386\i386\genassym.c" 2>$null
 if ($LASTEXITCODE -ne 0) { throw "genassym build failed" }
 $p = Start-Process -FilePath $ga -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$bld\assym.s"
 if ($p.ExitCode -ne 0) { throw "genassym run failed" }
@@ -145,6 +141,8 @@ $cflags = @(
     "-mno-ms-bitfields", "-mpreferred-stack-boundary=2",
     "-ffunction-sections", "-fdata-sections",
     "-nostdinc", "-I", $inc, "-I", $gen, "-I", $src,
+    "-I", (Join-Path $src "arch"), "-I", (Join-Path $src "fs"),
+    "-I", (Join-Path $src "driver"), "-I", (Join-Path $src "net"),
     "-isystem", $gccinc, "-DKERNEL", "-B", "C:/msys64/mingw32/bin/"
 )
 
@@ -162,7 +160,9 @@ function Compile-C([string]$file, [string]$out) {
 function Assemble([string]$file, [string]$out) {
     $args = @(
         "-m32", "-c", "-x", "assembler-with-cpp",
-        "-nostdinc", "-I", $bld, "-I", $inc, "-I", $gen, "-I", $src, "-I", $src,
+        "-nostdinc", "-I", $bld, "-I", $inc, "-I", $gen, "-I", $src,
+        "-I", (Join-Path $src "arch"), "-I", (Join-Path $src "fs"),
+        "-I", (Join-Path $src "driver"), "-I", (Join-Path $src "net"),
         "-I", (Join-Path $inc "sys"), "-DKERNEL", "-DLOCORE",
         "-B", "C:/msys64/mingw32/bin/",
         "-o", $out, $file
@@ -178,24 +178,24 @@ function Assemble([string]$file, [string]$out) {
 
 # ---------------------------------------------------------------- sources
 $c_sources = [ordered]@{
-    "locore.o"   = @("asm", "$src\i386\i386\locore.s")
-    "pmap.o"     = @("c",   "$src\i386\i386\pmap.c")
-    "machdep.o"  = @("c",   "$src\i386\i386\machdep.c")
-    "cons.o"     = @("c",   "$src\i386\i386\cons.c")
-    "bcmp.o"     = @("c",   "$src\libkern\bcmp.c")
-    "strcmp.o"   = @("c",   "$src\libkern\strcmp.c")
-    "strlen.o"   = @("c",   "$src\libkern\strlen.c")
-    "strings.o"  = @("c",   "$ws\kernel\strings.c")
-    "usermode.o" = @("c",   "$ws\kernel\usermode.c")
-    "usermode_asm.o" = @("asm", "$ws\kernel\usermode_asm.s")
+    "locore.o"   = @("asm", "$src\arch\i386\isa\locore.s")
+    "pmap.o"     = @("c",   "$src\arch\i386\isa\pmap.c")
+    "machdep.o"  = @("c",   "$src\arch\i386\isa\machdep.c")
+    "cons.o"     = @("c",   "$src\arch\i386\i386\cons.c")
+    "bcmp.o"     = @("c",   "$src\other\libkern\bcmp.c")
+    "strcmp.o"   = @("c",   "$src\other\libkern\strcmp.c")
+    "strlen.o"   = @("c",   "$src\other\libkern\strlen.c")
+    "strings.o"  = @("c",   "$ws\kernel\other\strings.c")
+    "usermode.o" = @("c",   "$ws\kernel\other\usermode.c")
+    "usermode_asm.o" = @("asm", "$ws\kernel\other\usermode_asm.s")
     "embed.o"    = @("c",   "$bld\embed.c")
-    "pccon.o"    = @("c",   "$ws\kernel\pccon.c")
-    "stubs.o"    = @("c",   "$ws\kernel\stubs.c")
-    "glue.o"     = @("c",   "$ws\kernel\glue.c")
-    "mon.o"      = @("c",   "$ws\kernel\mon.c")
-    "atapi.o"    = @("c",   "$ws\kernel\atapi.c")
-    "isofs.o"    = @("c",   "$ws\kernel\isofs.c")
-"vfs.o"      = @("c",   "$ws\kernel\vfs.c")
+    "pccon.o"    = @("c",   "$ws\kernel\driver\pccon.c")
+    "stubs.o"    = @("c",   "$ws\kernel\other\stubs.c")
+    "glue.o"     = @("c",   "$ws\kernel\other\glue.c")
+    "mon.o"      = @("c",   "$ws\kernel\other\mon.c")
+    "atapi.o"    = @("c",   "$ws\kernel\driver\atapi.c")
+    "isofs.o"    = @("c",   "$ws\kernel\fs\isofs.c")
+"vfs.o"      = @("c",   "$ws\kernel\fs\vfs.c")
 }
 
 $objs = @()

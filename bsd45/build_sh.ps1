@@ -33,9 +33,9 @@ function Write-Step([string]$s) { Write-Host "== $s" }
 # ---------------------------------------------------------------- headers
 function Prepare-Headers {
     New-Item -ItemType Directory -Force -Path $incu | Out-Null
-    Copy-Item (Join-Path $ws "userland\include\stdarg.h") "$incu\stdarg.h" -Force
-    Copy-Item (Join-Path $ws "userland\libc\ctype.h") "$incu\ctype.h" -Force
-    Copy-Item (Join-Path $ws "userland\libc\histedit.h") "$incu\histedit.h" -Force
+    Copy-Item (Join-Path $ws "libc\include\stdarg.h") "$incu\stdarg.h" -Force
+    Copy-Item (Join-Path $ws "libc\include\ctype.h") "$incu\ctype.h" -Force
+    Copy-Item (Join-Path $ws "libc\include\histedit.h") "$incu\histedit.h" -Force
     if (Test-Path (Join-Path $incu "errno.h")) { return }
     Write-Step "preparing libc header view"
     New-Item -ItemType Directory -Force -Path "$incu\sys", "$incu\machine", "$incu\net" | Out-Null
@@ -51,9 +51,9 @@ function Prepare-Headers {
     Copy-Item (Join-Path $usr "sys\hp300\include\limits.h") "$incu\machine\limits.h" -Force
     Copy-Item (Join-Path $usr "sys\hp300\include\float.h") "$incu\machine\float.h" -Force
     Copy-Item (Join-Path $usr "sys\sys\termios.h") "$incu\termios.h" -Force
-    Copy-Item (Join-Path $ws "userland\include\stdarg.h") "$incu\stdarg.h" -Force
-    Copy-Item (Join-Path $ws "userland\libc\ctype.h") "$incu\ctype.h" -Force
-    Copy-Item (Join-Path $ws "userland\libc\histedit.h") "$incu\histedit.h" -Force
+    Copy-Item (Join-Path $ws "libc\include\stdarg.h") "$incu\stdarg.h" -Force
+    Copy-Item (Join-Path $ws "libc\include\ctype.h") "$incu\ctype.h" -Force
+    Copy-Item (Join-Path $ws "libc\include\histedit.h") "$incu\histedit.h" -Force
 }
 Prepare-Headers
 
@@ -98,14 +98,14 @@ $objs = @()
 
 # ---------------------------------------------------------------- startup
 Write-Step "startup objects"
-if (Compile-Asm (Join-Path $ws "userland\libc\crt0.s") "$obj\crt0.o") { $objs += "$obj\crt0.o" }
-if (Compile-Asm (Join-Path $ws "userland\libc\jmp.s")  "$obj\jmp.o")  { $objs += "$obj\jmp.o" }
+if (Compile-Asm (Join-Path $ws "libc\src\crt0.s") "$obj\crt0.o") { $objs += "$obj\crt0.o" }
+if (Compile-Asm (Join-Path $ws "libc\src\jmp.s")  "$obj\jmp.o")  { $objs += "$obj\jmp.o" }
 
 # ---------------------------------------------------------------- our libc glue
 Write-Step "port glue"
-if (Compile-C (Join-Path $ws "userland\libc\libc_sys.c") "$obj\libc_sys.o") { $objs += "$obj\libc_sys.o" }
-if (Compile-C (Join-Path $ws "userland\libc\dtoa.c") "$obj\dtoa.o") { $objs += "$obj\dtoa.o" }
-if (Compile-C (Join-Path $ws "userland\libc\histedit_stub.c") "$obj\histedit_stub.o") { $objs += "$obj\histedit_stub.o" }
+if (Compile-C (Join-Path $ws "libc\src\libc_sys.c") "$obj\libc_sys.o") { $objs += "$obj\libc_sys.o" }
+if (Compile-C (Join-Path $ws "libc\src\dtoa.c") "$obj\dtoa.o") { $objs += "$obj\dtoa.o" }
+if (Compile-C (Join-Path $ws "libc\src\histedit_stub.c") "$obj\histedit_stub.o") { $objs += "$obj\histedit_stub.o" }
 
 # ---------------------------------------------------------------- 4.4BSD libc
 Write-Step "4.4BSD libc subset"
@@ -164,8 +164,8 @@ foreach ($m in $multi) {
     if (Compile-C $src "$obj\lc_$($m.o).o" $m.d) { $objs += "$obj\lc_$($m.o).o" }
 }
 # Classic (pre-rune) ctype table, from 4.3BSD-Reno.
-if (Compile-C (Join-Path $ws "userland\libc\errlst.c") "$obj\lc_errlst.o") { $objs += "$obj\lc_errlst.o" }
-if (Compile-C (Join-Path $ws "userland\libc\ctype_table.c") "$obj\ctype_table.o") { $objs += "$obj\ctype_table.o" }
+if (Compile-C (Join-Path $ws "libc\src\errlst.c") "$obj\lc_errlst.o") { $objs += "$obj\lc_errlst.o" }
+if (Compile-C (Join-Path $ws "libc\src\ctype_table.c") "$obj\ctype_table.o") { $objs += "$obj\ctype_table.o" }
 
 if ($fail) { Write-Host "$fail file(s) failed" -ForegroundColor Red; exit 1 }
 
@@ -178,7 +178,7 @@ if ($Target -eq "sh") {
     Get-ChildItem $shsrc -File |
         Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } |
         ForEach-Object { Copy-Item $_.FullName (Join-Path $gen $_.Name) -Force -ErrorAction SilentlyContinue }
-    Copy-Item (Join-Path $ws "userland\libc\*") $gen -Force -ErrorAction SilentlyContinue
+    Copy-Item (Join-Path $ws "libc\src\*") $gen -Force -ErrorAction SilentlyContinue
 
     $bash = Join-Path (Find-Msys2Root) "usr\bin\bash.exe"
     Push-Location $gen
@@ -188,14 +188,14 @@ if ($Target -eq "sh") {
     if (!(Test-Path "$gen\builtins.c")) { Write-Host "mkbuiltins failed" -ForegroundColor Red; $fail++ }
 
     Write-Step "generating nodes/syntax/init"
-    $shim = Join-Path $ws "userland\hostgen\hostshim.h"
+    $shim = Join-Path $ws "libc\src\hostgen\hostshim.h"
     $hflags = @("-std=gnu89", "-O1", "-B", "C:/msys64/mingw32/bin/",
         "-include", $shim, "-I", $shsrc)
-    & $GCC @hflags -o "$gen\mknodes.exe" (Join-Path $ws "userland\hostgen\mknodes.c") 2>&1 |
+    & $GCC @hflags -o "$gen\mknodes.exe" (Join-Path $ws "libc\src\hostgen\mknodes.c") 2>&1 |
         Where-Object { $_ -match 'error' } | Select-Object -First 5
     & $GCC @hflags -o "$gen\mksyntax.exe" (Join-Path $shsrc "mksyntax.c") 2>&1 |
         Where-Object { $_ -match 'error' } | Select-Object -First 5
-    & $GCC @hflags -o "$gen\mkinit.exe" (Join-Path $shsrc "mkinit.c") (Join-Path $ws "userland\hostgen\hoststub.c") 2>&1 |
+    & $GCC @hflags -o "$gen\mkinit.exe" (Join-Path $shsrc "mkinit.c") (Join-Path $ws "libc\src\hostgen\hoststub.c") 2>&1 |
         Where-Object { $_ -match 'error' } | Select-Object -First 5
     if (!(Test-Path "$gen\mknodes.exe") -or !(Test-Path "$gen\mksyntax.exe") -or !(Test-Path "$gen\mkinit.exe")) {
         Write-Host "host tool build failed" -ForegroundColor Red
@@ -245,7 +245,7 @@ if ($Target -eq "sh") {
     }
 } else {
     Write-Step "compiling libc test program"
-    if (Compile-C (Join-Path $ws "userland\t_libc.c") "$obj\t_libc.o") { $objs += "$obj\t_libc.o" }
+    if (Compile-C (Join-Path $ws "libc\src\t_libc.c") "$obj\t_libc.o") { $objs += "$obj\t_libc.o" }
 }
 
 if ($fail) { Write-Host "$fail file(s) failed" -ForegroundColor Red; exit 1 }
@@ -266,7 +266,7 @@ if ($Target -eq "sh") {
     # /bin/echo, /bin/ls: small tools linked against the same libc.
     foreach ($tool in @("echo", "ls", "cat", "mkdir")) {
         $tobj = "$obj\$tool.o"
-        if (Compile-C (Join-Path $ws "userland\$tool.c") $tobj) {
+        if (Compile-C (Join-Path $ws "libc\src\$tool.c") $tobj) {
             $tobjs = @($libobjs) + @($tobj)
             & $LD -m i386pe -Ttext 0x08048000 -e _start --subsystem console -o "$bld\$tool.pe" @tobjs $libgcc 2>&1 | Select-Object -First 20
             if ($LASTEXITCODE -eq 0) {
