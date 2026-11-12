@@ -190,6 +190,10 @@ bsd45/
   tools/                     ensure-src、clean、测试脚本
   libc/docs/                 USERLAND-PLAN.md
   vms/                       VMware 虚拟机定义
+
+`kernel/` 的每个目录（含子目录）都有一个 `config.mk`：
+它是 kbuild 风格构建的目录级配置位（obj-y/obj-m/dir-y），
+由 `tools/gen-config-mk.ps1` 生成，随源码一起进仓库。
   src/BSD45/                 仍由 tarball 解出的 4.4BSD 用户态源码
                              （usr/src/lib、usr/src/bin/sh 等，构建时使用）
 ```

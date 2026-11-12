@@ -110,3 +110,6 @@ Write-Host "`n=== kernel ==="
 Get-ChildItem $k -Directory | ForEach-Object { "  $($_.Name)/" }
 Write-Host "=== libc ==="
 Get-ChildItem $lc -Directory | ForEach-Object { "  $($_.Name)/" }
+
+# every directory gets its config.mk
+& (Join-Path $ws "tools\gen-config-mk.ps1") -Root (Join-Path $k "")
