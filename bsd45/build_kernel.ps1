@@ -49,7 +49,7 @@ Copy-Item "$src\include\machine\ansi.h"  "$inc\machine\ansi.h"  -Force
 Copy-Item "$src\include\machine\limits.h" "$inc\machine\limits.h" -Force
 Copy-Item "$src\include\machine\float.h"  "$inc\machine\float.h"  -Force
 New-Item -ItemType Directory -Force -Path "$inc\libkern" | Out-Null
-Copy-Item "$src\other\libkern\libkern.h" "$inc\libkern\libkern.h" -Force
+Copy-Item "$src\libkern\libkern.h" "$inc\libkern\libkern.h" -Force
 if (!(Select-String -Path "$inc\machine\types.h" -Pattern 'typedef int register_t;' -Quiet)) {
     Add-Content "$inc\machine\types.h" "`ntypedef int register_t;`ntypedef unsigned int u_register_t;" -Encoding ascii
 }
@@ -182,9 +182,9 @@ $c_sources = [ordered]@{
     "pmap.o"     = @("c",   "$src\arch\i386\isa\pmap.c")
     "machdep.o"  = @("c",   "$src\arch\i386\isa\machdep.c")
     "cons.o"     = @("c",   "$src\arch\i386\i386\cons.c")
-    "bcmp.o"     = @("c",   "$src\other\libkern\bcmp.c")
-    "strcmp.o"   = @("c",   "$src\other\libkern\strcmp.c")
-    "strlen.o"   = @("c",   "$src\other\libkern\strlen.c")
+    "bcmp.o"     = @("c",   "$src\libkern\bcmp.c")
+    "strcmp.o"   = @("c",   "$src\libkern\strcmp.c")
+    "strlen.o"   = @("c",   "$src\libkern\strlen.c")
     "strings.o"  = @("c",   "$ws\kernel\other\strings.c")
     "usermode.o" = @("c",   "$ws\kernel\other\usermode.c")
     "usermode_asm.o" = @("asm", "$ws\kernel\other\usermode_asm.s")

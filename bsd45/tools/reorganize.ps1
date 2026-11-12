@@ -45,7 +45,8 @@ MoveDir (Join-Path $sys "i386\pci")       (Join-Path $k "driver\pci_i386")
 foreach ($d in @("net","netccitt","netinet","netiso","netns")) {
     MoveDir (Join-Path $sys $d) (Join-Path $k "net\$d")
 }
-foreach ($d in @("kern","conf","compile","libkern","scripts","stand","stand.att","tests")) {
+MoveDir (Join-Path $sys "libkern") (Join-Path $k "libkern")
+foreach ($d in @("kern","conf","compile","scripts","stand","stand.att","tests")) {
     MoveDir (Join-Path $sys $d) (Join-Path $k "other\$d")
 }
 Get-ChildItem $sys -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
@@ -58,8 +59,8 @@ if (Test-Path (Join-Path $k "arch\hp300\include")) {
     Copy-Item (Join-Path $k "arch\hp300\include\float.h")  (Join-Path $k "include\machine\float.h")  -Force
 }
 # libkern header next to its sources
-if (Test-Path (Join-Path $k "other\libkern\libkern.h")) {
-    Copy-Item (Join-Path $k "other\libkern\libkern.h") (Join-Path $k "include\libkern\libkern.h") -Force
+if (Test-Path (Join-Path $k "libkern\libkern.h")) {
+    Copy-Item (Join-Path $k "libkern\libkern.h") (Join-Path $k "include\libkern\libkern.h") -Force
 }
 
 # ---------------- project kernel files

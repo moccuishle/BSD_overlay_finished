@@ -171,7 +171,7 @@ bsd45/
     arch/i386/{isa,conf,...}  i386 下的驱动/配置/启动代码
     fs/                     ufs/miscfs/isofs/nfs + 自有的 vfs.c、isofs.c
     vm/                     Mach VM（pmap 源）
-    lib/                    内核库代码（预留，可放 libkern）
+    libkern/                内核库例程（bcmp/strcmp/strlen/quad 等）
     libexec/                内核辅助程序（预留）
     driver/                 dev + 自有的 atapi.c、pccon.c
     net/                    net/netinet/netiso/netccitt/netns

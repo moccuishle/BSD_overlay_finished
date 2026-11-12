@@ -53,7 +53,6 @@ bsd45/kernel/driver/pci_i386/
 bsd45/kernel/other/kern/
 bsd45/kernel/other/conf/
 bsd45/kernel/other/compile/
-bsd45/kernel/other/libkern/
 bsd45/kernel/other/scripts/
 bsd45/kernel/other/stand/
 bsd45/kernel/other/stand.att/
