@@ -159,6 +159,23 @@ hi-vfs
 都已达成。
 
 
+## 目录与清理
+
+```
+bsd45/
+  src/BSD45/     4.4BSD-Lite2 解包树（20,463 个文件，约 171 MB）
+                 由 ..\4.4BSD-Lite2.tar.gz 自动解出；不要手工删除
+  build/         编译中间产物（对象、生成的头文件、isodir），可随时删
+  out/           userland ELF 与 ISO，可随时删
+  kernel/ boot/ overlay/ userland/ tools/ docs/ vms/   工程源码，保留
+```
+
+`powershell -File tools\clean.ps1` 只删 `build/`，
+`-All` 再删 `out/`；`src/` 永远不会被删。
+`build_sh.ps1` / `build_kernel.ps1` 都会先经过 `tools\ensure-src.ps1`，
+所以 `src/` 不在时会从 tarball 自动解包（7-Zip 优先，避免 bsdtar 在
+4.4BSD 的符号链接上报错）。
+
 ## 许可
 
 `4.4BSD-Lite2.tar.gz` 与 `bsd45/overlay/` 中的 4.4BSD 代码遵循其原始

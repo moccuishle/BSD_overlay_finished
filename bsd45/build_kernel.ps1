@@ -26,29 +26,8 @@ New-Item -ItemType Directory -Force -Path $bld, $obj, $gen | Out-Null
 # ---------------------------------------------------------------- sources
 # The repository ships the original 4.4BSD-Lite2 tarball plus a small
 # overlay of the files that were adjusted for modern GCC / PE linking.
-$tarball = Join-Path $ws "..\4.4BSD-Lite2.tar.gz"
-if (!(Test-Path $tarball)) { $tarball = Join-Path $ws "4.4BSD-Lite2.tar.gz" }
-if (!(Test-Path "$src\i386\i386\locore.s") -or !(Test-Path "$src\sys\param.h")) {
-    if (!(Test-Path $tarball)) {
-        throw "4.4BSD-Lite2.tar.gz not found next to the project; put it in the parent directory"
-    }
-    Write-Host "extracting $tarball"
-    $srcdir = Join-Path $ws "src\BSD45"
-    if (Test-Path $srcdir) { Remove-Item $srcdir -Recurse -Force -ErrorAction SilentlyContinue }
-    New-Item -ItemType Directory -Force -Path "$ws\src" | Out-Null
-    # Use the Windows bsdtar: MSYS2's GNU tar (first on PATH here) mishandles
-    # Windows -C paths.  bsdtar also skips the tree's broken symlinks for us.
-    $tarExe = Join-Path $env:SystemRoot "System32\tar.exe"
-    & $tarExe -xzf $tarball -C "$ws\src" 2>$null
-    # the tarball unpacks as 4.4BSD-Lite2/; the project tree calls it BSD45/
-    $extracted = Join-Path $ws "src\4.4BSD-Lite2"
-    if ((Test-Path $extracted) -and !(Test-Path (Join-Path $ws "src\BSD45"))) {
-        Rename-Item $extracted (Join-Path $ws "src\BSD45") -Force
-    }
-    if (!(Test-Path "$src\i386\i386\locore.s")) {
-        throw "extraction failed: $src\i386\i386\locore.s missing"
-    }
-}
+$null = & (Join-Path $ws "tools\ensure-src.ps1") -ws $ws
+
 $overlay = Join-Path $ws "overlay"
 if (Test-Path $overlay) {
     Copy-Item "$overlay\*" $src -Recurse -Force

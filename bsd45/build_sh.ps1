@@ -17,6 +17,7 @@ $bin  = Get-MingwBin
 $GCC  = "$bin\gcc.exe"; $LD = "$bin\ld.exe"; $OC = "$bin\objcopy.exe"
 $gccinc = Get-GccInclude $bin
 
+$null   = & (Join-Path $ws "tools\ensure-src.ps1") -ws $ws
 $usr   = Join-Path $ws "src\BSD45\usr\src"
 $shsrc = Join-Path $usr "bin\sh"
 $lc    = Join-Path $usr "lib\libc"
