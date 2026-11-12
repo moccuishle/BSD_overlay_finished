@@ -202,6 +202,25 @@ bsd45/
 等 4.4BSD 子树由 `tools/ensure-src.ps1` 从 tarball 解出后自动归位，不进入 git；
 仓库只跟踪自有的 kernel/libc/rootfs_overlay 代码。
 
+## Bash 版本
+
+构建与测试脚本除了 PowerShell 版，都提供了等价的 Bash 版（目标 Linux 主机）：
+
+```
+build_all.sh  build_userland.sh  build_sh.sh  build_kernel.sh  build_iso.sh
+tools-find.sh  verify.sh
+tools/run_qemu_test.sh  tools/test_s3.sh ... tools/test_s9.sh
+tools/clean.sh  tools/ensure-src.sh  tools/gen-config-mk.sh
+tools/capture_screenshot.sh  tools/test_kbd.sh
+tools/reorganize.sh  tools/fix-arch.sh  tools/move-libkern.sh
+```
+
+工具映射：`gcc.exe`→`gcc`、`ld.exe`→`ld`、`objcopy`→`objcopy`、`mkisofs.exe`→
+`genisoimage`/`xorriso`、`qemu-system-i386.exe`→`qemu-system-i386`。
+Linux 上 `gcc -m32` 直接产出 ELF，`build_*.sh` 用 `ld -m elf_i386` 和
+`boot/kernel.ld` 链接内核（不再经过 PE→objcopy）。构建需要 32 位工具链
+（`gcc-multilib`、`binutils`、`genisoimage` 或 `xorriso`）。
+
 ## 许可
 ## 许可
 
