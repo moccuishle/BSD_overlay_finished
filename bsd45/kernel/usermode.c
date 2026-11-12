@@ -77,6 +77,17 @@ extern void syscall_entry(void);
 extern int cngetc(void);
 extern void cnputc(int c);
 
+#ifndef	O_RDONLY
+#define	O_RDONLY	0x0000
+#define	O_WRONLY	0x0001
+#define	O_RDWR		0x0002
+#define	O_ACCMODE	0x0003
+#define	O_APPEND	0x0008
+#define	O_CREAT		0x0200
+#define	O_TRUNC		0x0400
+#define	O_EXCL		0x0800
+#endif
+
 struct file {
 	const char		*f_name;
 	const unsigned char	*f_data;
@@ -93,6 +104,9 @@ static struct file ramfs[] = {
 #define	FD_FILE	0
 #define	FD_DIR	1
 #define	FD_PIPE	2
+#define	FD_TMPFILE	3
+#define	FD_TMPDIR	4
+#define	FD_CONSOLE	5
 
 struct fd {
 	const unsigned char	*d;
@@ -105,6 +119,7 @@ struct fd {
 	unsigned		dpos;		/* next directory record offset */
 	int			pipeidx;	/* pipe table slot */
 	int			rw;		/* 1 = read end, 2 = write end */
+	int			node;		/* tmpfs node index */
 };
 
 /* saved user context, filled by syscall_entry/enter_user */
@@ -421,6 +436,7 @@ fd_alloc(struct file *f)
 			cur->fds[i].dpos = 0;
 			cur->fds[i].pipeidx = -1;
 			cur->fds[i].rw = 0;
+			cur->fds[i].node = -1;
 			return (i);
 		}
 	}
@@ -444,12 +460,165 @@ fd_alloc_dir(unsigned lba, unsigned size)
 			cur->fds[i].dpos = 0;
 			cur->fds[i].pipeidx = -1;
 			cur->fds[i].rw = 0;
+			cur->fds[i].node = -1;
 			return (i);
 		}
 	}
 	return (-1);
 }
 
+
+
+/* ---------------------------------------------------------------- tmpfs */
+
+#define	NTMPFS		32
+#define	TMPFS_NAMELEN	32
+#define	TMPFS_DATASZ	4096
+#define	TMPFS_VA	0xFE600000	/* kernel window, one page per node */
+
+static int	tmpfs_mapped[NTMPFS];
+
+struct tmpfs_node {
+	int		used;
+	int		isdir;
+	char		name[TMPFS_NAMELEN];
+	unsigned char	*data;		/* one page per file */
+	unsigned	size;
+};
+
+static struct tmpfs_node tmpfs[NTMPFS];
+
+static struct tmpfs_node *
+tmpfs_find(const char *name)
+{
+	int i;
+
+	for (i = 0; i < NTMPFS; i++)
+		if (tmpfs[i].used && strcmp(tmpfs[i].name, name) == 0)
+			return (&tmpfs[i]);
+	return (0);
+}
+
+static struct tmpfs_node *
+tmpfs_create(const char *name, int isdir)
+{
+	struct tmpfs_node *n;
+	int i, len;
+
+	len = strlen(name);
+	if (len == 0 || len >= TMPFS_NAMELEN)
+		return (0);
+	if ((n = tmpfs_find(name)) != 0)
+		return (n->isdir == isdir ? n : 0);
+	for (i = 0; i < NTMPFS; i++) {
+		if (!tmpfs[i].used) {
+			n = &tmpfs[i];
+			bzero(n, sizeof(*n));
+			n->used = 1;
+			n->isdir = isdir;
+			bcopy(name, n->name, len + 1);
+			if (!isdir) {
+				unsigned off = i * PAGE_SIZE;
+
+				n->data = (unsigned char *)(TMPFS_VA + off);
+				if (!tmpfs_mapped[i]) {
+					unsigned pa = page_alloc();
+
+					pmap_map((vm_offset_t)n->data,
+					    (vm_offset_t)pa,
+					    (vm_offset_t)pa + PAGE_SIZE,
+					    VM_PROT_READ | VM_PROT_WRITE);
+					tmpfs_mapped[i] = 1;
+				}
+				bzero(n->data, TMPFS_DATASZ);
+			}
+			return (n);
+		}
+	}
+	return (0);
+}
+
+static void
+tmpfs_remove(struct tmpfs_node *n)
+{
+
+	n->used = 0;
+	n->size = 0;
+	n->data = 0;
+}
+
+/*
+ * "/tmp" is the tmpfs root; "/tmp/name" is a node.  Anything deeper is not
+ * supported (one flat level is enough for redirection and scratch files).
+ */
+static int
+tmpfs_lookup(const char *path, struct tmpfs_node **np, int *isdir)
+{
+	const char *name;
+
+	if (strcmp(path, "/tmp") == 0 || strcmp(path, "/tmp/") == 0) {
+		*np = 0;
+		*isdir = 1;
+		return (0);
+	}
+	if (strncmp(path, "/tmp/", 5) != 0)
+		return (-1);
+	name = path + 5;
+	if (strchr(name, '/') != 0)
+		return (-1);
+	if ((*np = tmpfs_find(name)) == 0)
+		return (-1);
+	*isdir = (*np)->isdir;
+	return (0);
+}
+
+static int
+tmpfs_is_tmp(const char *path)
+{
+
+	return (strcmp(path, "/tmp") == 0 || strcmp(path, "/tmp/") == 0 ||
+	    strncmp(path, "/tmp/", 5) == 0);
+}
+
+static int
+fd_alloc_tmpfile(struct tmpfs_node *n, int rw, unsigned off)
+{
+	int i;
+
+	for (i = 3; i < NFD; i++) {
+		if (!cur->fds[i].used) {
+			bzero(&cur->fds[i], sizeof(cur->fds[i]));
+			cur->fds[i].used = 1;
+			cur->fds[i].type = FD_TMPFILE;
+			cur->fds[i].node = n - tmpfs;
+			cur->fds[i].rw = rw;
+			cur->fds[i].off = off;
+			cur->fds[i].len = n->size;
+			cur->fds[i].pipeidx = -1;
+			return (i);
+		}
+	}
+	return (-1);
+}
+
+static int
+fd_alloc_tmpdir(void)
+{
+	int i;
+
+	for (i = 3; i < NFD; i++) {
+		if (!cur->fds[i].used) {
+			bzero(&cur->fds[i], sizeof(cur->fds[i]));
+			cur->fds[i].used = 1;
+			cur->fds[i].type = FD_TMPDIR;
+			cur->fds[i].dpos = 0;
+			cur->fds[i].node = -1;
+			cur->fds[i].pipeidx = -1;
+			return (i);
+		}
+	}
+	return (-1);
+}
 
 /* ---------------------------------------------------------------- pipes */
 
@@ -657,7 +826,16 @@ proc_alloc(void)
 
 	for (i = 0; i < NPROC; i++)
 		if (procs[i].state == P_FREE) {
+			int fd;
+
 			bzero(&procs[i], sizeof(procs[i]));
+			for (fd = 0; fd < 3; fd++) {
+				procs[i].fds[fd].used = 1;
+				procs[i].fds[fd].type = FD_CONSOLE;
+				procs[i].fds[fd].rw = (fd == 0) ? 1 : 2;
+				procs[i].fds[fd].pipeidx = -1;
+				procs[i].fds[fd].node = -1;
+			}
 			return (&procs[i]);
 		}
 	return (0);
@@ -1106,6 +1284,24 @@ syscall_dispatch(struct sysregs *r)
 			r->eax = (unsigned)-EBADF;
 			break;
 		}
+		if (cur->fds[fd].used && cur->fds[fd].type == FD_TMPFILE) {
+			struct tmpfs_node *n = &tmpfs[cur->fds[fd].node];
+			unsigned off = cur->fds[fd].off, n2 = len;
+
+			if (off >= TMPFS_DATASZ) {
+				r->eax = (unsigned)-ENOSPC;
+				break;
+			}
+			if (n2 > TMPFS_DATASZ - off)
+				n2 = TMPFS_DATASZ - off;
+			bcopy((char *)buf, n->data + off, n2);
+			cur->fds[fd].off = off + n2;
+			if (cur->fds[fd].off > n->size)
+				n->size = cur->fds[fd].off;
+			cur->fds[fd].len = n->size;
+			r->eax = n2;
+			break;
+		}
 		if (cur->fds[fd].used && cur->fds[fd].type == FD_PIPE) {
 			struct pipe *pp = &pipes[cur->fds[fd].pipeidx];
 			unsigned space, n, first;
@@ -1145,11 +1341,8 @@ syscall_dispatch(struct sysregs *r)
 			r->eax = n;
 			break;
 		}
-		if (cur->fds[fd].used && fd >= 3) {	/* file: not writable */
-			r->eax = (unsigned)-EBADF;
-			break;
-		}
-		if (fd < 0 || fd > 2) {
+		if (!cur->fds[fd].used ||
+		    cur->fds[fd].type != FD_CONSOLE) {	/* not writable */
 			r->eax = (unsigned)-EBADF;
 			break;
 		}
@@ -1166,15 +1359,37 @@ syscall_dispatch(struct sysregs *r)
 			r->eax = (unsigned)-EINVAL;
 			break;
 		}
-		if (fd == 0 && (fd >= NFD || !cur->fds[0].used)) {
-			r->eax = (unsigned)console_read((char *)buf, len);
-			break;
-		}
 		if (fd >= NFD || !cur->fds[fd].used) {
 			r->eax = (unsigned)-EBADF;
 			break;
 		}
+		if (cur->fds[fd].type == FD_CONSOLE) {
+			r->eax = (unsigned)console_read((char *)buf, len);
+			break;
+		}
 		if (cur->fds[fd].type == FD_DIR) {
+			r->eax = (unsigned)-EISDIR;
+			break;
+		}
+		if (cur->fds[fd].type == FD_TMPFILE) {
+			struct tmpfs_node *n = &tmpfs[cur->fds[fd].node];
+			unsigned off = cur->fds[fd].off, n2 = 0;
+
+			if (cur->fds[fd].rw != 1 && cur->fds[fd].rw != 2) {
+				r->eax = (unsigned)-EBADF;
+				break;
+			}
+			if (off < n->size) {
+				n2 = n->size - off;
+				if (n2 > len)
+					n2 = len;
+				bcopy(n->data + off, (char *)buf, n2);
+				cur->fds[fd].off = off + n2;
+			}
+			r->eax = n2;
+			break;
+		}
+		if (cur->fds[fd].type == FD_TMPDIR) {
 			r->eax = (unsigned)-EISDIR;
 			break;
 		}
@@ -1225,7 +1440,7 @@ syscall_dispatch(struct sysregs *r)
 		char path[128];
 		struct file *f;
 		unsigned lba, dsize;
-		int fd, isdir;
+		int fd, isdir = 0;
 
 		if (user_str(r->ebx, path, sizeof(path)) < 0) {
 			r->eax = (unsigned)-EFAULT;
@@ -1234,6 +1449,38 @@ syscall_dispatch(struct sysregs *r)
 		f = fs_lookup(path);
 		if (f != 0) {
 			fd = fd_alloc(f);
+			r->eax = (fd < 0) ? (unsigned)-EMFILE : (unsigned)fd;
+			break;
+		}
+		if (tmpfs_is_tmp(path)) {
+			struct tmpfs_node *n = 0;
+			int isdir2, rw, flags = (int)r->ecx;
+
+			if (tmpfs_lookup(path, &n, &isdir2) < 0) {
+				if (!(flags & O_CREAT) ||
+				    strcmp(path, "/tmp") == 0 ||
+				    strcmp(path, "/tmp/") == 0) {
+					r->eax = (unsigned)-ENOENT;
+					break;
+				}
+				n = tmpfs_create(path + 5, 0);
+				if (n == 0) {
+					r->eax = (unsigned)-ENOSPC;
+					break;
+				}
+				isdir2 = 0;
+			}
+			if (isdir2) {
+				fd = fd_alloc_tmpdir();
+				r->eax = (fd < 0) ? (unsigned)-EMFILE :
+				    (unsigned)fd;
+				break;
+			}
+			rw = ((flags & O_ACCMODE) == O_RDONLY) ? 1 : 2;
+			if (flags & O_TRUNC)
+				n->size = 0;
+			fd = fd_alloc_tmpfile(n, rw,
+			    (flags & O_APPEND) ? n->size : 0);
 			r->eax = (fd < 0) ? (unsigned)-EMFILE : (unsigned)fd;
 			break;
 		}
@@ -1301,6 +1548,14 @@ syscall_dispatch(struct sysregs *r)
 
 		if (user_str(r->ebx, path, sizeof(path)) < 0) {
 			r->eax = (unsigned)-EFAULT;
+			break;
+		}
+		if (tmpfs_is_tmp(path)) {
+			struct tmpfs_node *n2 = 0;
+			int isd2;
+
+			r->eax = (tmpfs_lookup(path, &n2, &isd2) == 0) ? 0 :
+			    (unsigned)-ENOENT;
 			break;
 		}
 		if (fs_lookup(path) != 0 || isofile_exists(path) ||
@@ -1386,6 +1641,19 @@ syscall_dispatch(struct sysregs *r)
 			r->eax = (unsigned)-EFAULT;
 			break;
 		}
+		if (tmpfs_is_tmp(path)) {
+			struct tmpfs_node *n = 0;
+			int isd;
+
+			if (tmpfs_lookup(path, &n, &isd) < 0) {
+				r->eax = (unsigned)-ENOENT;
+				break;
+			}
+			fill_stat(isd ? 0040755 : 0100644,
+			    n ? n->size : 0, (unsigned *)r->ecx);
+			r->eax = 0;
+			break;
+		}
 		if (iso_mounted() &&
 		    iso_stat(path, &lba, &size, &isdir) == 0) {
 			fill_stat(isdir ? 0040755 : 0100755, size,
@@ -1416,6 +1684,18 @@ syscall_dispatch(struct sysregs *r)
 			r->eax = (unsigned)-EBADF;
 			break;
 		}
+		if (cur->fds[r->ebx].type == FD_TMPFILE) {
+			fill_stat(0100644,
+			    tmpfs[cur->fds[r->ebx].node].size,
+			    (unsigned *)r->ecx);
+			r->eax = 0;
+			break;
+		}
+		if (cur->fds[r->ebx].type == FD_TMPDIR) {
+			fill_stat(0040755, 4096, (unsigned *)r->ecx);
+			r->eax = 0;
+			break;
+		}
 		fill_stat(cur->fds[r->ebx].type == FD_DIR ? 0040755 : 0100755,
 		    cur->fds[r->ebx].len, (unsigned *)r->ecx);
 		r->eax = 0;
@@ -1429,7 +1709,8 @@ syscall_dispatch(struct sysregs *r)
 		int eflags, rv, namlen, reclen;
 
 		if (fd >= NFD || !cur->fds[fd].used ||
-		    cur->fds[fd].type != FD_DIR) {
+		    (cur->fds[fd].type != FD_DIR &&
+		     cur->fds[fd].type != FD_TMPDIR)) {
 			r->eax = (unsigned)-EBADF;
 			break;
 		}
@@ -1438,6 +1719,34 @@ syscall_dispatch(struct sysregs *r)
 			break;
 		}
 		fp = &cur->fds[fd];
+		if (fp->type == FD_TMPDIR) {
+			int i;
+
+			for (i = fp->dpos; i < NTMPFS && !tmpfs[i].used; i++)
+				;
+			if (basep != 0 && user_ok(basep, 4))
+				*(unsigned *)basep = 0;
+			if (i >= NTMPFS) {
+				fp->dpos = NTMPFS;
+				r->eax = 0;
+				break;
+			}
+			fp->dpos = i + 1;
+			namlen = strlen(tmpfs[i].name);
+			reclen = (8 + namlen + 1 + 3) & ~3;
+			if ((unsigned)reclen > nb) {
+				r->eax = (unsigned)-EINVAL;
+				break;
+			}
+			bzero((char *)buf, reclen);
+			*(unsigned *)(buf + 0) = i + 1;
+			*(unsigned short *)(buf + 4) = reclen;
+			((char *)buf)[6] = tmpfs[i].isdir ? 4 : 8;
+			((char *)buf)[7] = namlen;
+			bcopy(tmpfs[i].name, (char *)buf + 8, namlen + 1);
+			r->eax = reclen;
+			break;
+		}
 		pos = fp->dpos;
 		rv = iso_readdir(fp->lba, fp->dsize, &pos, name, &elba,
 		    &esize, &eflags);
@@ -1473,6 +1782,22 @@ syscall_dispatch(struct sysregs *r)
 
 		if (fd >= NFD || !cur->fds[fd].used) {
 			r->eax = (unsigned)-EBADF;
+			break;
+		}
+		if (cur->fds[fd].type == FD_TMPFILE) {
+			if (wh == 0)
+				cur->fds[fd].off = off;
+			else if (wh == 1)
+				cur->fds[fd].off += off;
+			else
+				cur->fds[fd].off = tmpfs[cur->fds[fd].node].size;
+			r->eax = cur->fds[fd].off;
+			break;
+		}
+		if (cur->fds[fd].type == FD_TMPDIR) {
+			cur->fds[fd].dpos = (wh == 1) ? cur->fds[fd].dpos + off
+			    : 0;
+			r->eax = cur->fds[fd].dpos;
 			break;
 		}
 		if (cur->fds[fd].type == FD_DIR) {
@@ -1629,6 +1954,54 @@ syscall_dispatch(struct sysregs *r)
 		r->eax = to;
 		break;
 	}
+	case 10: {			/* unlink(path) */
+		char path[128];
+		struct tmpfs_node *n = 0;
+		int isd;
+
+		if (user_str(r->ebx, path, sizeof(path)) < 0) {
+			r->eax = (unsigned)-EFAULT;
+			break;
+		}
+		if (!tmpfs_is_tmp(path) ||
+		    tmpfs_lookup(path, &n, &isd) < 0 || n == 0) {
+			r->eax = (unsigned)-ENOENT;
+			break;
+		}
+		tmpfs_remove(n);
+		r->eax = 0;
+		break;
+	}
+	case 136: case 137: {		/* mkdir / rmdir */
+		char path[128];
+		struct tmpfs_node *n = 0;
+		int isd, wantdir = (n == 0);
+
+		if (user_str(r->ebx, path, sizeof(path)) < 0) {
+			r->eax = (unsigned)-EFAULT;
+			break;
+		}
+		if (!tmpfs_is_tmp(path) || strcmp(path, "/tmp") == 0 ||
+		    strcmp(path, "/tmp/") == 0) {
+			r->eax = (unsigned)-ENOENT;
+			break;
+		}
+		if (n == 0 && 0)
+			break;
+		if (tmpfs_lookup(path, &n, &isd) == 0) {
+			if (n != 0 && !n->isdir) {
+				r->eax = (unsigned)-EEXIST;
+				break;
+			}
+			r->eax = (unsigned)-EEXIST;
+			break;
+		}
+		if (r->eax == 0)
+			break;
+		n = tmpfs_create(path + 5, 1);
+		r->eax = n ? 0 : (unsigned)-ENOSPC;
+		break;
+	}
 	case 12:			/* chdir */
 		r->eax = (unsigned)-ENOENT;
 		break;
@@ -1699,6 +2072,17 @@ start_prog(const char *path, const char *script)
 	cur->ppid = 0;
 	cur->pd = pd;
 	cur->brk_mapped = USER_HEAP_START;
+	{
+		int fd;
+
+		for (fd = 0; fd < 3; fd++) {
+			cur->fds[fd].used = 1;
+			cur->fds[fd].type = FD_CONSOLE;
+			cur->fds[fd].rw = (fd == 0) ? 1 : 2;
+			cur->fds[fd].pipeidx = -1;
+			cur->fds[fd].node = -1;
+		}
+	}
 	next_pid = 2;
 
 	syscall_gate_init();

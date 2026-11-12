@@ -46,3 +46,16 @@ memmove(void *dst, const void *src, unsigned int n)
 	bcopy(src, dst, n);
 	return (dst);
 }
+
+char *
+strchr(const char *s, int c)
+{
+	char ch = (char)c;
+
+	while (*s) {
+		if (*s == ch)
+			return ((char *)s);
+		s++;
+	}
+	return (ch == 0) ? (char *)s : 0;
+}

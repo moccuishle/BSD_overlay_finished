@@ -200,6 +200,20 @@ access(const char *path, int mode)
 }
 
 int
+mkdir(const char *path, mode_t mode)
+{
+
+	return (syscall_rv(sys3(136, (int)path, mode, 0)));
+}
+
+int
+rmdir(const char *path)
+{
+
+	return (syscall_rv(sys1(137, (int)path)));
+}
+
+int
 unlink(const char *path)
 {
 

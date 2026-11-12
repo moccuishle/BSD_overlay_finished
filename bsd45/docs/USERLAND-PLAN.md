@@ -127,6 +127,18 @@ execve + libc + /bin/sh**，最终 ISO 里是可执行的 i386 ELF 用户程序�
 
 尚未做：可写文件系统/文件重定向、真 vnode/VFS、页回收、作业控制。
 
+### S8 内存 tmpfs 与重定向 ✅
+
+- 内核 tmpfs（`/tmp`）：32 槽、每文件一页，`pmap_map` 到内核窗口；
+- `open(O_CREAT/O_TRUNC/O_APPEND)`、`read/write/lseek`、`stat/fstat`、
+  `unlink/mkdir/rmdir`、tmpfs 目录的 `getdirentries`；
+- fd 0/1/2 登记为 `FD_CONSOLE`，`fcntl(F_DUPFD)`/`dup2` 才能保存/恢复，
+  sh 的 `>`、`>>` 因此生效；
+- 新增 `/bin/mkdir`；
+- 验收：`tools/test_s8.ps1`（重定向、追加、mkdir、ls /tmp）。
+
+尚未做：真 vnode/VFS、页回收、作业控制、更多工具。
+
 
 ## 关键接口草案
 

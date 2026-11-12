@@ -1,8 +1,8 @@
 # BSD45-ELF-x86 任务恢复文本
 
 更新时间：2026-11-13（Asia/Shanghai）
-状态：**S7 完成**（目录遍历/通配符 + pipe 管道）。
-下一步：可写文件系统/重定向到文件、真 vnode/VFS、页回收。
+状态：**S8 完成**（内存 tmpfs：文件重定向、/tmp、mkdir）。
+下一步：真 vnode/VFS、页回收、作业控制、更多工具。
 仓库：https://github.com/moccuishle/BSD45_rootfs_shell_finished
 
 本机环境（网吧 Windows，无管理员、防火墙不可关）：
@@ -44,6 +44,7 @@ ISO，最终 ISO 启动后进入用户态运行 BSD 的 `/bin/sh`。
 | S5 | fork/vfork/wait4、进程表与调度、`/bin/echo` 外部命令 | ✅ 本次完成 |
 | S6 | 控制台 tty：termios ioctl、行规程、`isatty` 为真、sh 交互提示符 | ✅ 本次完成 |
 | S7 | 目录遍历（`getdirentries`/`opendir`/`readdir`、`ls`、通配符）+ pipe 管道 | ✅ 本次完成 |
+| S8 | 内存 tmpfs：`/tmp` 可写、`>`/`>>` 重定向、`mkdir`/`ls /tmp` | ✅ 本次完成 |
 
 ### S3 验收（`powershell -File tools\test_s3.ps1`）
 
@@ -231,6 +232,37 @@ hello-pipe
   用户缓冲），`close`/退出时维护读写端引用计数并唤醒对端；
 - fd 0/1/2 的 `dup2`/`fcntl(F_DUPFD)` 现在优先查 fd 表，才落到控制台。
 
+
+### S8 验收（`powershell -File tools\test_s8.ps1`）
+
+```
+bsd45> shell
+# echo hello-tmpfs > /tmp/a
+# cat /tmp/a
+hello-tmpfs
+# echo second >> /tmp/a
+# cat /tmp/a
+hello-tmpfs
+second
+# mkdir /tmp/d
+# ls /tmp
+a
+d
+# exit 0
+[user exit 0]
+```
+
+### S8 实现要点
+
+- 内核里一块**内存文件系统** `/tmp`：32 个槽、每文件一页（4 KB）、名字 1 层；
+  每页用 `pmap_map` 映射到内核窗口 `0xFE600000`（物理地址不能当虚拟地址用）；
+- `open` 支持 `O_CREAT/O_TRUNC/O_APPEND/O_RDONLY/O_WRONLY`，`read/write/lseek`
+  走 tmpfs 节点，`stat/fstat` 报文件和目录，`unlink/mkdir/rmdir` 直接改表；
+- `getdirentries` 增加 tmpfs 目录分支，`ls /tmp` 能列出来；
+- **fd 0/1/2 正式登记为 `FD_CONSOLE`**：以前 read/write 直接特判，导致
+  `fcntl(1, F_DUPFD, 10)`（sh 的 `savefd`）返回 EBADF，重定向静默失效；
+- 新增 `/bin/mkdir`；`sh` 的 `>`/`>>` 现在走 open + fcntl + dup2。
+
 ## 3. S3 做了什么
 
 ### 3.1 内核（`kernel/usermode.c`）
@@ -414,12 +446,22 @@ absent 是正常的。
     （QEMU 不报）。改成**先压好 iret 帧和所有寄存器、最后才设段寄存器并切
     CR3** 就正常；`enter_user` 早已是这个顺序，`resume_user` 这次也统一了。
 
-## 7. 下一步（S7 之后）
+37. **物理页不能直接当虚拟地址用**：`page_alloc()` 返回的是物理地址，
+    tmpfs 一开始直接 `bzero(pa, 4096)` 立刻 `#PF`；要用 `pmap_map` 映射到
+    内核窗口（`0xFE600000`）再访问。
+38. **fd 0/1/2 要在 fd 表里**：只做 `if (fd == 0)` 特判时，sh 的
+    `fcntl(1, F_DUPFD, 10)` 会因为 `fds[1].used == 0` 返回 EBADF，`>`
+    重定向不报错但不生效。给 0/1/2 建 `FD_CONSOLE` 条目即可。
+39. **`start_prog` 也要初始化 console fd**：它 `bzero(procs)` 后手工填
+    pid 1，绕过了 `proc_alloc`，第一版 S8 因此让 init/sh 的 printf 和
+    read(0) 全失败。
 
-1. 可写文件系统（内存 tmpfs）→ `>`/`>>` 重定向到文件、`/tmp`；
-2. 真 vnode/VFS 与 vm_map，替换 ramfs 数组 + ISO9660 特判；
-3. 页回收（fork/exec/管道页只分配不释放）；
-4. 更多工具（`grep`、`wc`、`mkdir`）与作业控制；
-5. 从 4.4BSD 源码直接编译更多 `usr.bin` 程序。
+## 7. 下一步（S8 之后）
+
+1. 真 vnode/VFS 与 vm_map，替换 ramfs/ISO/tmpfs 的三套特判；
+2. 页回收（fork/exec/管道/tmpfs 只分配不释放）；
+3. `/bin/rm`、`/bin/cp`、`/bin/mv` 等工具，作业控制；
+4. 从 4.4BSD 源码直接编译更多 `usr.bin` 程序；
+5. 简单的权限/属主模型。
 
 恢复方式：打开本文件，按第 5 节构建，从第 7 节继续。

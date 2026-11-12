@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <termios.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 static char *vav[3] = { "echo", "vfork-exec-ok", 0 };
 static char *venv[2] = { "PATH=/bin", 0 };
@@ -32,6 +34,30 @@ main(int argc, char **argv)
 		if (r == 0)
 			printf("tty: iflag=%x oflag=%x cflag=%x lflag=%x\n",
 			    t.c_iflag, t.c_oflag, t.c_cflag, t.c_lflag);
+	}
+
+	{
+		int fd, n2;
+		char tb[64];
+
+		fd = open("/tmp/t", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		printf("tmpfs: open=%d\n", fd);
+		if (fd >= 0) {
+			n2 = write(fd, "tmpfs-data\n", 11);
+			printf("tmpfs: wrote=%d\n", n2);
+			close(fd);
+		}
+		if (stat("/tmp/t", &tb[0]) == 0)
+			printf("tmpfs: stat ok\n");
+		fd = open("/tmp/t", O_RDONLY);
+		if (fd >= 0) {
+			n2 = read(fd, tb, sizeof(tb));
+			if (n2 > 0) {
+				write(1, "tmpfs-read: ", 12);
+				write(1, tb, n2);
+			}
+			close(fd);
+		}
 	}
 
 	{
