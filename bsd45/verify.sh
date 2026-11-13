@@ -17,7 +17,7 @@ kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
 
 rc=0
-for pat in "4.4BSD-Lite2 (i386) ELF kernel" \
+for pat in "4.5BSD-Lite2 (i386) ELF kernel" \
            "root: ISO9660 on ATAPI CD" \
            "BSD/386 monitor"; do
     if grep -q "$pat" "$log"; then

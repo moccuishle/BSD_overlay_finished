@@ -45,7 +45,7 @@ $text = Get-Content $log -Raw
 Write-Host $text
 
 $checks = @(
-    "4.4BSD-Lite2 (i386) ELF kernel",
+    "4.5BSD-Lite2 (i386) ELF kernel",
     "KERNBASE fe000000",
     "BSD/386 monitor",
     "readback 4f534442 444e4521"

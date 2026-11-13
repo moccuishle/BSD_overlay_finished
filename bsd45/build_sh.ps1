@@ -1,9 +1,9 @@
-# build_sh.ps1 - build the 4.4BSD /bin/sh (and a libc smoke test) as a static
+# build_sh.ps1 - build the 4.5BSD /bin/sh (and a libc smoke test) as a static
 # i386 ELF for BSD45-ELF-x86.
 #
 #	COFF objects -> PE (image base 0x08048000) -> objcopy -O elf32-i386
 #
-# Sources: 4.4BSD-Lite2 usr/src/bin/sh plus a port of the libc subset it
+# Sources: 4.5BSD-Lite2 usr/src/bin/sh plus a port of the libc subset it
 # needs (libc_sys.c supplies the int 0x80 syscall layer).
 param(
     [string]$Target = "sh",     # "sh" or "test"
@@ -107,8 +107,8 @@ if (Compile-C (Join-Path $ws "libc\src\libc_sys.c") "$obj\libc_sys.o") { $objs +
 if (Compile-C (Join-Path $ws "libc\src\dtoa.c") "$obj\dtoa.o") { $objs += "$obj\dtoa.o" }
 if (Compile-C (Join-Path $ws "libc\src\histedit_stub.c") "$obj\histedit_stub.o") { $objs += "$obj\histedit_stub.o" }
 
-# ---------------------------------------------------------------- 4.4BSD libc
-Write-Step "4.4BSD libc subset"
+# ---------------------------------------------------------------- 4.5BSD libc
+Write-Step "4.5BSD libc subset"
 $libc_files = @(
     "string\strcat.c","string\strcmp.c","string\strcpy.c",
     "string\strcspn.c","string\strdup.c","string\strlen.c","string\strncat.c",
@@ -145,7 +145,7 @@ foreach ($f in $libc_files) {
     if (Compile-C $src $o $extra) { $objs += $o }
 }
 
-# Files that 4.4BSD compiles several times with different macros.
+# Files that 4.5BSD compiles several times with different macros.
 $multi = @(
     @{ f = "string\bcopy.c";   d = @();           o = "bcopy" },
     @{ f = "string\bcopy.c";   d = @("-DMEMCOPY"); o = "memcpy" },
@@ -213,7 +213,7 @@ if ($Target -eq "sh") {
 
     Write-Step "bison/flex"
     Push-Location $gen
-    # 4.4BSD's arith.y marks every action with "= {" (a local yacc dialect);
+    # 4.5BSD's arith.y marks every action with "= {" (a local yacc dialect);
     # plain bison wants "{".  Old yacc also let yyerror() use yyerrok/yyclearin,
     # which bison scopes to yyparse, so drop those two statements.
     (Get-Content arith.y) -replace '= \{', '{' |

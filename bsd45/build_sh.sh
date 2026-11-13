@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build_sh.sh - build the real 4.4BSD /bin/sh (and the small tools) as ELF32.
+# build_sh.sh - build the real 4.5BSD /bin/sh (and the small tools) as ELF32.
 #
 #   build_sh.sh            -> out/userland/sh.elf + echo/ls/cat/mkdir
 #   build_sh.sh -t test    -> out/userland/test.elf (the self test)
@@ -25,7 +25,7 @@ obj="$bld/shobj"
 outd="$ws/out/userland"
 mkdir -p "$bld" "$incu" "$gen" "$obj" "$outd"
 
-# the 4.4BSD userland tree is extracted from the tarball on demand
+# the 4.5BSD userland tree is extracted from the tarball on demand
 if [ ! -f "$usr/lib/libc/gen/opendir.c" ]; then
     bash "$ws/tools/ensure-src.sh"
 fi
@@ -43,7 +43,7 @@ prepare_headers() {
     cp -f "$ws/libc/include/histedit.h" "$incu/histedit.h"
     [ -f "$incu/errno.h" ] && return 0
     step "preparing libc header view"
-    # 4.4BSD usr/include + the kernel headers, from the merged layout
+    # 4.5BSD usr/include + the kernel headers, from the merged layout
     cp -f "$usr/include/"*.h "$incu/" 2>/dev/null
     cp -f "$ws/kernel/include/sys/"*.h "$incu/" 2>/dev/null
     cp -f "$ws/kernel/include/sys/"*.h "$incu/sys/" 2>/dev/null
@@ -58,7 +58,7 @@ prepare_headers() {
 prepare_headers
 
 gccinc="$(find_gcc_include)"
-common=(-m32 -std=gnu89 -O2 -ffreestanding -fno-builtin
+common=(-m32 -std=gnu89 -O2 -ffreestanding -fno-builtin -fleading-underscore
     -fno-pie -fno-pic -fno-stack-protector
     -fno-asynchronous-unwind-tables -fno-unwind-tables
     -fno-strict-aliasing -fcommon
@@ -103,7 +103,7 @@ compile_c "$ws/libc/src/libc_sys.c"      "$obj/libc_sys.o"      && add "$obj/lib
 compile_c "$ws/libc/src/dtoa.c"          "$obj/dtoa.o"          && add "$obj/dtoa.o"
 compile_c "$ws/libc/src/histedit_stub.c" "$obj/histedit_stub.o" && add "$obj/histedit_stub.o"
 
-step "4.4BSD libc subset"
+step "4.5BSD libc subset"
 libc_files=(
     string/strcat.c string/strcmp.c string/strcpy.c
     string/strcspn.c string/strdup.c string/strlen.c string/strncat.c
@@ -139,7 +139,7 @@ for f in "${libc_files[@]}"; do
     compile_c "$lc/$f" "$o" "${extra[@]}" && add "$o"
 done
 
-# files 4.4BSD compiles several times with different macros
+# files 4.5BSD compiles several times with different macros
 multi_src=(string/bcopy.c string/memset.c string/index.c string/rindex.c string/swab.c)
 multi_def=("bcopy:" "memcpy:-DMEMCOPY" "memmove:-DMEMMOVE" "memset:" "bzero:-DBZERO"
            "index:" "strchr:-DSTRCHR" "rindex:" "strrchr:-DSTRRCHR" "swab:")
@@ -160,6 +160,16 @@ done
 
 compile_c "$ws/libc/src/errlst.c"      "$obj/lc_errlst.o"    && add "$obj/lc_errlst.o"
 compile_c "$ws/libc/src/ctype_table.c" "$obj/ctype_table.o"  && add "$obj/ctype_table.o"
+
+# 64-bit arithmetic helpers: 4.5BSD libkern, so we do not depend on the
+# exact symbol names libgcc uses on this platform.
+quad_srcs=(divdi3.c moddi3.c udivdi3.c umoddi3.c qdivrem.c
+           muldi3.c adddi3.c subdi3.c anddi3.c iordi3.c xordi3.c
+           notdi2.c negdi2.c ashldi3.c ashrdi3.c lshldi3.c lshrdi3.c
+           cmpdi2.c ucmpdi2.c)
+for f in "${quad_srcs[@]}"; do
+    compile_c "$ws/kernel/lib/$f" "$obj/kq_${f%.c}.o" && add "$obj/kq_${f%.c}.o"
+done
 
 if [ "$fail" -ne 0 ]; then echo "$fail file(s) failed" >&2; exit 1; fi
 libobjs=("${objs[@]}")

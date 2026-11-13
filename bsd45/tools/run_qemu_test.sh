@@ -48,7 +48,9 @@ exec 3<>"/dev/tcp/127.0.0.1/$port"
 
 # a background reader keeps the socket drained; the console prompt has no
 # trailing newline, so line-based read would lose it
-( cat <&3 >> "$log" ) &
+# stdbuf keeps the reader unbuffered: the final "[user exit N]" line is
+# written just before the guest halts and must not sit in cat's buffer
+( stdbuf -o0 cat <&3 >> "$log" 2>/dev/null || cat <&3 >> "$log" ) &
 catpid=$!
 
 wait_text() {   # wait_text <pattern> <seconds>
@@ -66,7 +68,13 @@ if ! wait_text "bsd45>" "$timeout"; then
     exit 1
 fi
 
-IFS='|' read -r -a cmdlist <<< "$keys"
+# "|" separates the commands to type, so a real pipeline must be written
+# as "\|" (the tests use e.g. "echo hi \| cat")
+keys_prot="${keys//\\|/$'\x01'}"
+IFS='|' read -r -a cmdlist <<< "$keys_prot"
+for i in "${!cmdlist[@]}"; do
+    cmdlist[$i]="${cmdlist[$i]//$'\x01'/|}"
+done
 for k in "${cmdlist[@]}"; do
     [ -n "$k" ] || continue
     printf '%s\r' "$k" >&3

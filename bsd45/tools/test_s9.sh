@@ -20,7 +20,7 @@ check() {   # check <name> <log> <needle...>
 LABEL="S9"
 echo "S9 acceptance: vnode/VFS over ISO9660 + tmpfs"
 log="$("$ws/tools/run_qemu_test.sh" -Iso "$iso" \
-    -Keys "shell|ls /|ls /tmp|cat /readme.txt|echo vfs-ok > /tmp/a|cat /tmp/a|mkdir /tmp/d|ls /tmp|echo hi-vfs | cat|exit 0" \
+    -Keys "shell|ls /|ls /tmp|cat /readme.txt|echo vfs-ok > /tmp/a|cat /tmp/a|mkdir /tmp/d|ls /tmp|echo hi-vfs \| cat|exit 0" \
     -WaitFor "user exit" -TimeoutSec 60)"
 check "iso dir"    "$log" "bin" "sbin" "readme.txt"
 check "iso file"   "$log" "via vnode" "boot.img"

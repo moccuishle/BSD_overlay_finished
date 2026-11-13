@@ -20,7 +20,7 @@ check() {   # check <name> <log> <needle...>
 LABEL="S7"
 echo "S7 acceptance: directory listing / glob / pipe"
 log="$("$ws/tools/run_qemu_test.sh" -Iso "$iso" \
-    -Keys "shell|ls /|ls /bin|echo /bin/*|echo hello-pipe | cat|exit 0" \
+    -Keys "shell|ls /|ls /bin|echo /bin/*|echo hello-pipe \| cat|exit 0" \
     -WaitFor "user exit" -TimeoutSec 45)"
 check "root" "$log" "bin" "sbin" "hello.elf" "readme.txt"
 check "bin"  "$log" "cat.elf" "echo.elf" "ls.elf" "sh.elf"

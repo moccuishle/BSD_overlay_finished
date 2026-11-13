@@ -41,10 +41,10 @@ bsd45/kernel/include/machine/**
 !bsd45/kernel/include/machine/**/config.mk
 !bsd45/kernel/include/machine/config.mk
 
-bsd45/kernel/include/libkern/**
-!bsd45/kernel/include/libkern/**/
-!bsd45/kernel/include/libkern/**/config.mk
-!bsd45/kernel/include/libkern/config.mk
+bsd45/kernel/include/lib/**
+!bsd45/kernel/include/lib/**/
+!bsd45/kernel/include/lib/**/config.mk
+!bsd45/kernel/include/lib/config.mk
 
 bsd45/kernel/arch/**
 !bsd45/kernel/arch/**/
@@ -136,3 +136,7 @@ bsd45/kernel/other/tests/**
 !bsd45/kernel/other/tests/config.mk
 
 bsd45/kernel/other/mips
+ubuntu-vm/
+*.vmem
+*.vmdk
+

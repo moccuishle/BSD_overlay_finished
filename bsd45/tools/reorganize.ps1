@@ -1,4 +1,4 @@
-# reorganize.ps1 - move the 4.4BSD sys tree and userland into a Linux-like
+# reorganize.ps1 - move the 4.5BSD sys tree and userland into a Linux-like
 # layout under bsd45/kernel and bsd45/libc.
 $ErrorActionPreference = "Stop"
 $ws = "C:\Users\Administrator\Desktop\work\bsd45"

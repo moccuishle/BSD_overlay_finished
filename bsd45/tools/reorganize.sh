@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# reorganize.sh - one-time migration: merge the extracted 4.4BSD sys tree and
+# reorganize.sh - one-time migration: merge the extracted 4.5BSD sys tree and
 # userland into the Linux-like kernel/ and libc/ trees.  Idempotent: missing
 # sources are skipped, so ensure-src.sh can call it after a fresh extraction.
 set -uo pipefail
@@ -39,14 +39,14 @@ md "$sys/dev"          "$k/driver/dev"
 md "$sys/i386/isa"     "$k/driver/isa"
 md "$sys/i386/pci"     "$k/driver/pci_i386"
 for d in net netccitt netinet netiso netns; do md "$sys/$d" "$k/net/$d"; done
-md "$sys/libkern"      "$k/libkern"
+md "$sys/libkern"      "$k/lib"
 for d in kern conf compile scripts stand stand.att tests; do md "$sys/$d" "$k/other/$d"; done
 find "$sys" -maxdepth 1 -type f -exec mv {} "$k/other/" \; 2>/dev/null
 
 [ -d "$k/arch/hp300/include" ] && cp -f "$k/arch/hp300/include/ansi.h" "$k/include/machine/ansi.h" 2>/dev/null
 [ -d "$k/arch/hp300/include" ] && cp -f "$k/arch/hp300/include/limits.h" "$k/include/machine/limits.h" 2>/dev/null
 [ -d "$k/arch/hp300/include" ] && cp -f "$k/arch/hp300/include/float.h" "$k/include/machine/float.h" 2>/dev/null
-[ -f "$k/libkern/libkern.h" ] && cp -f "$k/libkern/libkern.h" "$k/include/libkern/libkern.h" 2>/dev/null
+[ -f "$k/lib/libkern.h" ] && cp -f "$k/lib/libkern.h" "$k/include/libkern/libkern.h" 2>/dev/null
 
 # project sources that used to sit flat in kernel/
 for f in usermode.c usermode_asm.s glue.c mon.c stubs.c strings.c; do

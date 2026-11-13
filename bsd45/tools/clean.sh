@@ -2,7 +2,7 @@
 # clean.sh - remove generated directories without touching the sources.
 #   clean.sh          -> build/
 #   clean.sh -a       -> build/ and out/
-# src/ (the extracted 4.4BSD tree) is never removed.
+# src/ (the extracted 4.5BSD tree) is never removed.
 set -uo pipefail
 ws="$(cd "$(dirname "$0")/.." && pwd)"
 all=0

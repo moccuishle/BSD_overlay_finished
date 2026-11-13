@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build_kernel.sh - cross-build the 4.4BSD-Lite2 i386 kernel as ELF32.
+# build_kernel.sh - cross-build the 4.5BSD-Lite2 i386 kernel as ELF32.
 set -uo pipefail
 ws="$(cd "$(dirname "$0")" && pwd)"
 . "$ws/tools-find.sh"
@@ -9,7 +9,7 @@ bld="$ws/build"
 obj="$bld/obj"
 inc="$bld/inc"
 gen="$bld/gen"
-mkdir -p "$bld" "$obj" "$gen" "$inc/sys" "$inc/vm" "$inc/machine" "$inc/i386" "$inc/libkern"
+mkdir -p "$bld" "$obj" "$gen" "$inc/sys" "$inc/vm" "$inc/machine" "$inc/i386" "$inc/lib"
 
 require_tools gcc ld objcopy objdump
 gccinc="$(find_gcc_include)"
@@ -23,7 +23,7 @@ cp -f "$src/include/sys/"*.h      "$inc/sys/"      2>/dev/null
 cp -f "$src/vm/"*.h               "$inc/vm/"       2>/dev/null
 cp -f "$src/include/machine/"*.h  "$inc/machine/"  2>/dev/null
 cp -f "$src/include/machine/"*.h  "$inc/i386/"     2>/dev/null
-cp -f "$src/libkern/libkern.h"    "$inc/libkern/libkern.h" 2>/dev/null
+cp -f "$src/lib/libkern.h"    "$inc/lib/libkern.h" 2>/dev/null
 
 if ! grep -q 'typedef int register_t;' "$inc/machine/types.h" 2>/dev/null; then
     printf '\ntypedef int register_t;\ntypedef unsigned int u_register_t;\n' >> "$inc/machine/types.h"
@@ -108,7 +108,7 @@ step "embedding userland"
 
 # ---------------------------------------------------------------- compile
 step "compiling"
-cflags=(-m32 -std=gnu89 -O2 -ffreestanding
+cflags=(-m32 -std=gnu89 -O2 -ffreestanding -fleading-underscore
     -fno-pie -fno-pic -fcommon -fno-builtin
     -fno-stack-protector -fno-asynchronous-unwind-tables
     -fno-unwind-tables -fno-tree-loop-distribute-patterns
@@ -144,9 +144,9 @@ sources=(
     "c:$src/arch/i386/isa/pmap.c"
     "c:$src/arch/i386/isa/machdep.c"
     "c:$src/arch/i386/i386/cons.c"
-    "c:$src/libkern/bcmp.c"
-    "c:$src/libkern/strcmp.c"
-    "c:$src/libkern/strlen.c"
+    "c:$src/lib/bcmp.c"
+    "c:$src/lib/strcmp.c"
+    "c:$src/lib/strlen.c"
     "c:$src/other/strings.c"
     "c:$src/other/usermode.c"
     "asm:$src/other/usermode_asm.s"

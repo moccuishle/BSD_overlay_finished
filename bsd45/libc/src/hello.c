@@ -8,7 +8,7 @@ static void sys_exit(int code){
     __asm__ volatile("int $0x80" :: "a"(1), "b"(code));
     for(;;);
 }
-void _start(void){
+void start(void){
     const char *m = "hello from user mode (ELF32 i386)\r\n";
     sys_write(1, m, 35);
     sys_exit(0);

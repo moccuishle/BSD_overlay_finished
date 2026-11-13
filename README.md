@@ -221,6 +221,18 @@ Linux 上 `gcc -m32` 直接产出 ELF，`build_*.sh` 用 `ld -m elf_i386` 和
 `boot/kernel.ld` 链接内核（不再经过 PE→objcopy）。构建需要 32 位工具链
 （`gcc-multilib`、`binutils`、`genisoimage` 或 `xorriso`）。
 
+## Linux 构建状态
+
+已在 **Ubuntu 26.04 LTS** 上完整构建并验证（详见 `LINUX-BUILD.md`）：
+
+- `bash build_all.sh` 产出 `out/BSD45-ELF-x86.iso`（4,247,552 字节）
+- `verify.sh` 通过，QEMU 能启动内核与 ISO9660 根
+- `tools/test_s3..test_s9` **7 个验收测试全部 PASSED**
+
+在 Linux 上需要 `gcc-multilib`、`binutils`、`genisoimage`（或 `xorriso`）、
+`qemu-system-x86`、`bison`、`flex`。Windows 上的 `*.ps1` 流程保持不变。
+
+
 ## 许可
 ## 许可
 

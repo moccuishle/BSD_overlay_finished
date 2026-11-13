@@ -1,4 +1,4 @@
-# build_kernel.ps1 - cross-build the 4.4BSD-Lite2 i386 kernel as UNIX ELF
+# build_kernel.ps1 - cross-build the 4.5BSD-Lite2 i386 kernel as UNIX ELF
 # using the MSYS2 mingw32 (i686-w64-mingw32) gcc.
 param(
     [switch]$NoLink,
@@ -24,7 +24,7 @@ $gccinc = Get-GccInclude $bin
 New-Item -ItemType Directory -Force -Path $bld, $obj, $gen | Out-Null
 
 # ---------------------------------------------------------------- sources
-# The repository ships the original 4.4BSD-Lite2 tarball plus a small
+# The repository ships the original 4.5BSD-Lite2 tarball plus a small
 # overlay of the files that were adjusted for modern GCC / PE linking.
 $null = & (Join-Path $ws "tools\ensure-src.ps1") -ws $ws
 
@@ -49,7 +49,7 @@ Copy-Item "$src\include\machine\ansi.h"  "$inc\machine\ansi.h"  -Force
 Copy-Item "$src\include\machine\limits.h" "$inc\machine\limits.h" -Force
 Copy-Item "$src\include\machine\float.h"  "$inc\machine\float.h"  -Force
 New-Item -ItemType Directory -Force -Path "$inc\libkern" | Out-Null
-Copy-Item "$src\libkern\libkern.h" "$inc\libkern\libkern.h" -Force
+Copy-Item "$src\lib\libkern.h" "$inc\libkern\libkern.h" -Force
 if (!(Select-String -Path "$inc\machine\types.h" -Pattern 'typedef int register_t;' -Quiet)) {
     Add-Content "$inc\machine\types.h" "`ntypedef int register_t;`ntypedef unsigned int u_register_t;" -Encoding ascii
 }
@@ -95,7 +95,7 @@ void *		memset(void *, int, unsigned int);
 '#define NFD 0'               | Set-Content -Encoding ascii "$gen\fd.h"
 
 # ---------------------------------------------------------------- assym.s
-# Build and run the genuine 4.4BSD genassym on the host to get the same
+# Build and run the genuine 4.5BSD genassym on the host to get the same
 # struct offsets / constants that locore.s expects.
 $ga = "$bld\genassym.exe"
 & $GCC -B "C:/msys64/mingw32/bin/" -m32 -O1 -std=gnu89 -fno-strict-aliasing `
@@ -182,9 +182,9 @@ $c_sources = [ordered]@{
     "pmap.o"     = @("c",   "$src\arch\i386\isa\pmap.c")
     "machdep.o"  = @("c",   "$src\arch\i386\isa\machdep.c")
     "cons.o"     = @("c",   "$src\arch\i386\i386\cons.c")
-    "bcmp.o"     = @("c",   "$src\libkern\bcmp.c")
-    "strcmp.o"   = @("c",   "$src\libkern\strcmp.c")
-    "strlen.o"   = @("c",   "$src\libkern\strlen.c")
+    "bcmp.o"     = @("c",   "$src\lib\bcmp.c")
+    "strcmp.o"   = @("c",   "$src\lib\strcmp.c")
+    "strlen.o"   = @("c",   "$src\lib\strlen.c")
     "strings.o"  = @("c",   "$ws\kernel\other\strings.c")
     "usermode.o" = @("c",   "$ws\kernel\other\usermode.c")
     "usermode_asm.o" = @("asm", "$ws\kernel\other\usermode_asm.s")

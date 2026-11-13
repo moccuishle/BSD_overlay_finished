@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fix-arch.sh - one-time helper: 4.4BSD sources include each other as
+# fix-arch.sh - one-time helper: 4.5BSD sources include each other as
 # "i386/i386/..." and "i386/isa/...", so keep that nesting under arch/i386.
 set -uo pipefail
 ws="$(cd "$(dirname "$0")/.." && pwd)"

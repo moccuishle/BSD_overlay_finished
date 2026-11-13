@@ -7,7 +7,7 @@ out="${1:-$ws/out/userland}"
 mkdir -p "$out"
 require_tools gcc ld
 
-CFLAGS=(-m32 -O2 -ffreestanding -fno-pie -fno-pic
+CFLAGS=(-m32 -O2 -ffreestanding -fleading-underscore -fno-pie -fno-pic
     -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables
     -nostdlib -nostdinc -march=i386 -mno-sse -mno-sse2 -mno-mmx -mno-avx
     -mpreferred-stack-boundary=2)

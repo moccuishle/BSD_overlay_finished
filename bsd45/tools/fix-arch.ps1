@@ -1,4 +1,4 @@
-# fix-arch.ps1 - 4.4BSD sources include each other as "i386/i386/..." and
+# fix-arch.ps1 - 4.5BSD sources include each other as "i386/i386/..." and
 # "i386/isa/...", so the arch tree keeps that nesting internally.
 $ErrorActionPreference = "Stop"
 $ws = "C:\Users\Administrator\Desktop\work\bsd45"

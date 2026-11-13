@@ -1,6 +1,6 @@
 # build_all.ps1 - build kernel + ISO in one shot
 param(
-    [switch]$NoSh      # keep the small built-in sh instead of the 4.4BSD one
+    [switch]$NoSh      # keep the small built-in sh instead of the 4.5BSD one
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,7 +10,7 @@ $ws = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ($LASTEXITCODE -ne 0) { throw "userland build failed" }
 
 if (-not $NoSh) {
-    # S3: the real 4.4BSD /bin/sh (overwrites out\userland\sh.elf).
+    # S3: the real 4.5BSD /bin/sh (overwrites out\userland\sh.elf).
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ws "build_sh.ps1") |
         Select-Object -Last 3
     if (!(Test-Path (Join-Path $ws "out\userland\sh.elf"))) { throw "sh build failed" }

@@ -252,7 +252,7 @@ main(vm_offset_t firstaddr)
 	extern int Maxmem, physmem;
 
 	printf("\n");
-	printf("4.4BSD-Lite2 (i386) ELF kernel\n");
+	printf("4.5BSD-Lite2 (i386) ELF kernel\n");
 	printf("Kernel: ELF32 i386, KERNBASE %x, first free page %x\n",
 	    KERNBASE, firstaddr);
 	printf("Memory: maxmem %x, physmem %x, avail %x-%x\n",

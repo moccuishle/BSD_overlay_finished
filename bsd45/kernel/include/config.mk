@@ -9,6 +9,6 @@
 # dir-y += 
 
 # subdirectories:
-#   libkern/
+#   lib/
 #   machine/
 #   sys/

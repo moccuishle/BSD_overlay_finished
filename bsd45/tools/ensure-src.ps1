@@ -1,6 +1,6 @@
-# ensure-src.ps1 - make sure the extracted 4.4BSD-Lite2 tree exists.
+# ensure-src.ps1 - make sure the extracted 4.5BSD-Lite2 tree exists.
 #
-# The tree is regenerated from ../4.4BSD-Lite2.tar.gz; it is deliberately
+# The tree is regenerated from ../4.5BSD-Lite2.tar.gz; it is deliberately
 # not part of the repository (it is huge).  build_sh.ps1 and
 # build_kernel.ps1 both call this so either one can run on a fresh clone.
 #
@@ -16,10 +16,12 @@ $srcroot = Join-Path $ws "src\BSD45"
 $marker  = Join-Path $srcroot "usr\src\lib\libc\gen\opendir.c"
 if (Test-Path $marker) { return $srcroot }
 
-$tarball = Join-Path $ws "..\4.4BSD-Lite2.tar.gz"
+$tarball = Join-Path $ws "..\4.5BSD-Lite2.tar.gz"
+if (!(Test-Path $tarball)) { $tarball = Join-Path $ws "4.5BSD-Lite2.tar.gz" }
+if (!(Test-Path $tarball)) { $tarball = Join-Path $ws "..\4.4BSD-Lite2.tar.gz" }
 if (!(Test-Path $tarball)) { $tarball = Join-Path $ws "4.4BSD-Lite2.tar.gz" }
 if (!(Test-Path $tarball)) {
-    throw "4.4BSD-Lite2.tar.gz not found next to the project; put it in the parent directory"
+    throw "4.5BSD-Lite2.tar.gz not found next to the project; put it in the parent directory"
 }
 
 Write-Host "extracting $tarball"
@@ -50,7 +52,7 @@ if (Test-Path $seven) {
     & $tarExe -xzf $tarball -C $srcdir 2>$null
 }
 
-$extracted = Join-Path $srcdir "4.4BSD-Lite2"
+$extracted = Join-Path $srcdir "4.5BSD-Lite2"
 if ((Test-Path $extracted) -and !(Test-Path $srcroot)) {
     Rename-Item $extracted $srcroot -Force
 }

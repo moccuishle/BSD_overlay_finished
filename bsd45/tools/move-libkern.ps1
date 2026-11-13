@@ -1,40 +1,19 @@
-# move-libkern.ps1 - rename kernel/lib to kernel/libkern and merge the
-# 4.4BSD libkern sources into it.
+# move-libkern.ps1 - one-time helper: kernel\libkern was renamed to kernel\lib.
 $ErrorActionPreference = "Stop"
-$ws = "C:\Users\Administrator\Desktop\work\bsd45"
-$k  = Join-Path $ws "kernel"
-$lib = Join-Path $k "lib"
-$lk  = Join-Path $k "libkern"
-$src = Join-Path $k "other\libkern"
+$ws = Split-Path -Parent $PSScriptRoot
+$k = Join-Path $ws "kernel"
 
-if (Test-Path $lib) {
-    if (Test-Path $lk) { Remove-Item $lib -Recurse -Force }
-    else { Rename-Item $lib $lk -Force }
-}
-New-Item -ItemType Directory -Force -Path $lk | Out-Null
-if (Test-Path $src) {
-    Get-ChildItem $src -Force | ForEach-Object {
-        Move-Item $_.FullName (Join-Path $lk $_.Name) -Force
+foreach ($pair in @(@("libkern", "lib"), @("include\libkern", "include\lib"))) {
+    $src = Join-Path $k $pair[0]
+    $dst = Join-Path $k $pair[1]
+    if ((Test-Path $src) -and !(Test-Path $dst)) {
+        Move-Item $src $dst
+        "moved $($pair[0]) -> $($pair[1])"
     }
-    Remove-Item $src -Recurse -Force -ErrorAction SilentlyContinue
 }
-# the placeholder is no longer needed
-Remove-Item (Join-Path $lk ".keep") -Force -ErrorAction SilentlyContinue
-
-# build_kernel: libkern sources now live in kernel\libkern
-$p = Join-Path $ws "build_kernel.ps1"
-$t = [IO.File]::ReadAllText($p)
-$t = $t.Replace('"$src\other\libkern\bcmp.c"',   '"$src\libkern\bcmp.c"')
-$t = $t.Replace('"$src\other\libkern\strcmp.c"', '"$src\libkern\strcmp.c"')
-$t = $t.Replace('"$src\other\libkern\strlen.c"', '"$src\libkern\strlen.c"')
-$t = $t.Replace('Copy-Item "$src\other\libkern\libkern.h"', 'Copy-Item "$src\libkern\libkern.h"')
-[IO.File]::WriteAllText($p, $t, (New-Object System.Text.UTF8Encoding($false)))
-
-# reorganize.ps1: fresh clones put sys\libkern into kernel\libkern
-$p = Join-Path $ws "tools\reorganize.ps1"
-$t = [IO.File]::ReadAllText($p)
-$t = $t.Replace('MoveDir (Join-Path $sys "libkern")       (Join-Path $k "other\libkern")',
-                'MoveDir (Join-Path $sys "libkern")       (Join-Path $k "libkern")')
-[IO.File]::WriteAllText($p, $t, (New-Object System.Text.UTF8Encoding($false)))
-
-Write-Host "kernel/libkern files: $((Get-ChildItem $lk -File).Count)"
+Get-ChildItem -Path $k -Recurse -Include *.c,*.h |
+    Where-Object { (Get-Content $_.FullName -Raw) -match '#include <libkern/' } |
+    ForEach-Object {
+        (Get-Content $_.FullName -Raw).Replace('#include <libkern/', '#include <lib/') |
+            Set-Content $_.FullName -NoNewline
+    }

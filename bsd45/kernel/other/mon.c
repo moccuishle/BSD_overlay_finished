@@ -192,7 +192,7 @@ monitor(void)
 		else if (!strcmp(line, "map"))
 			cmd_map();
 		else if (!strcmp(line, "banner"))
-			printf("4.4BSD-Lite2 i386 ELF kernel, KERNBASE %x\n",
+			printf("4.5BSD-Lite2 i386 ELF kernel, KERNBASE %x\n",
 			    KERNBASE);
 		else if (!strcmp(line, "reboot"))
 			reboot_now();
